@@ -1,11 +1,11 @@
 ---
 name: read_channel
-description: Read recent persona broadcasts from the central channel
+description: Read recent channel messages from the central channel
 ---
 
 # read_channel
 
-Use this skill when Gov Agent needs to read recent persona broadcasts from the central channel.
+Use this skill when Gov Agent needs to read recent channel messages from the central channel.
 
 ## Input
 
@@ -20,7 +20,7 @@ interface ReadChannelInput {
 
 ```ts
 interface ReadChannelOutput {
-  broadcasts: ChannelBroadcast[]
+  messages: ChannelMessage[]
 }
 ```
 
@@ -42,6 +42,6 @@ read_channel custom tool -> backend -> readChannelToolWrapper -> Firebase Realti
 
 ## Notes
 
-- Use `since` to avoid re-processing old broadcasts.
+- Use `since` to avoid re-processing old messages.
 - Use `limit` when running batch matching.
-- Do not infer private user data beyond the broadcast payload.
+- Do not infer private user data beyond the channel message payload.

@@ -19,7 +19,7 @@
 
 **建立政府帳號（手動，每個機關/資源一個）：**
 
-政府帳號的 role 判斷靠 Firestore `/gov_staff/{uid}` 文件。  
+政府帳號的 role 判斷靠 Firestore `/gov_staff/{uid}` 文件。
 做法：
 1. 讓政府端 app 匿名登入一次 → 拿到 `uid`（印出或用 Firebase Console 查）
 2. 在 Firebase Console → Firestore → `/gov_staff/{uid}` → 新增文件：

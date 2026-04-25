@@ -11,11 +11,13 @@ import {
   type PeerMessage,
   type HumanMessage,
 } from '../lib/store.js'
+import type { SwipeCard } from '@matcha/shared-types'
 
 // ── Types from api-doc §9 ─────────────────────────────────────────────────────
 
 type ServerEvent =
   | { type: 'agent_reply'; content: string; done: boolean }
+  | { type: 'swipe_card'; card: SwipeCard }
   | { type: 'peer_message'; message: PeerMessage }
   | { type: 'human_message'; message: HumanMessage }
   | { type: 'error'; code: string; message: string }

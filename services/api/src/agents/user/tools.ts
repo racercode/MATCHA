@@ -143,7 +143,6 @@ export async function executePersonaTool(
       const { cards } = input as { cards: SwipeCard[] }
       broadcast(uid, { type: 'swipe_card', card: cards[0] })
       return { queued: cards.length }
-      
     }
 
     case 'request_human_review': {

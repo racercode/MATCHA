@@ -72,7 +72,7 @@ Client                       Firebase              Backend
 
 ## 2. 市民 — Persona Chat
 
-Persona Chat 完全透過 WebSocket 進行（見 §9）。  
+Persona Chat 完全透過 WebSocket 進行（見 §9）。
 此 REST 端點僅供讀取目前的 persona 快照。
 
 ---
@@ -101,7 +101,7 @@ Persona Chat 完全透過 WebSocket 進行（見 §9）。
 
 ## 3. 市民 — Match Inbox（Polling）
 
-GovAgent 回覆廣播後，市民定期呼叫此端點查看新增的媒合回覆。  
+GovAgent 回覆廣播後，市民定期呼叫此端點查看新增的媒合回覆。
 **不使用 WebSocket push；由客戶端自行決定 polling 頻率（建議 10–30 秒）。**
 
 ---
@@ -295,9 +295,102 @@ Gov 主動開啟後建立，市民定期 polling 發現；進入後透過 WebSoc
 
 ---
 
+### `POST /gov/agent/run`
+
+開發 / demo 用 endpoint，用來模擬「Persona Agent 發布新的 channel message 後，觸發 Gov Agent 判斷媒合」。
+
+正式接 Firebase listener 後，後端可以直接呼叫同一段 Gov Agent pipeline，不一定要透過 HTTP 呼叫這支 API。
+
+**Request body — 單一 channel message**
+```json
+{
+  "resourceId": "rid-design-intern-002",
+  "message": {
+    "msgId": "msg-001",
+    "uid": "user-xiaoya-001",
+    "summary": "中文系大三，對品牌設計、排版和文組轉職有興趣，目前想找實習或職涯探索資源。",
+    "publishedAt": 1714000000000
+  }
+}
+```
+
+Persona Agent 應傳 channel 實際資料形狀，也就是：
+
+```ts
+interface ChannelMessage {
+  msgId: string
+  uid: string
+  summary: string
+  publishedAt: number
+}
+```
+
+後端會直接把這筆 channel message 交給 Gov Agent pipeline。Phase 2 不再額外建立 broadcast 正規化層。
+
+**Request body — smoke test**
+
+不傳 `message` 時，後端會跑全部 fake channel messages：
+
+```json
+{
+  "resourceId": "rid-design-intern-002"
+}
+```
+
+`broadcast` 欄位仍暫時相容舊版 Phase 2 文件，但 demo / Persona Agent 應改傳 `message`。
+
+不傳 `resourceId` 時，後端會跑該 agency 的全部 fake resources。
+
+**Optional fields**
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `resourceId` | string | 指定要測試哪一個 Resource Agent；省略時跑該 agency 的 fake resources |
+| `agencyId` | string | 當 authenticated gov staff 沒有 agencyId 時使用；預設 `taipei-youth-dept` |
+| `threshold` | number | 媒合分數門檻，0–100，預設 70 |
+
+**Response `200`**
+```json
+{
+  "success": true,
+  "data": {
+    "trigger": "channel_message",
+    "agencyId": "taipei-youth-dept",
+    "resourceIds": ["rid-design-intern-002"],
+    "threshold": 70,
+    "matches": [
+      {
+        "thread": {
+          "tid": "tid-gov-rid-design-intern-002-user-xiaoya-001",
+          "type": "gov_user",
+          "matchScore": 90
+        },
+        "initialMessage": {
+          "mid": "msg-gov-rid-design-intern-002-user-xiaoya-001",
+          "type": "decision",
+          "from": "gov_agent:rid-design-intern-002"
+        },
+        "reason": "使用者明確提到品牌設計、排版與實習需求，符合創意產業實習媒合計畫的服務對象。",
+        "missingInfo": ["是否可投入至少兩個月實習"]
+      }
+    ]
+  }
+}
+```
+
+**Errors**
+
+| 狀態碼 | 情境 |
+|------|------|
+| `400` | `message` 缺少 `msgId`、`uid` 或 `summary`，或 `threshold` 不是 0–100 整數 |
+| `404` | 找不到指定 `resourceId`，或該 agency 沒有 fake resources |
+| `500` | Gov Agent session 初始化或 pipeline 執行失敗 |
+
+---
+
 ### `GET /gov/channel-replies`
 
-列出 GovAgent 發出的所有媒合回覆，並 join 市民 summary 供 Dashboard 顯示。  
+列出 GovAgent 發出的所有媒合回覆，並 join 市民 summary 供 Dashboard 顯示。
 **[POLL]** — 政府端定期呼叫更新 Dashboard。
 
 **Query params**
@@ -338,7 +431,7 @@ Gov 主動開啟後建立，市民定期 polling 發現；進入後透過 WebSoc
 
 ### `POST /gov/channel-replies/:replyId/open`
 
-政府承辦人決定對某筆媒合開啟真人對話，建立 HumanThread。  
+政府承辦人決定對某筆媒合開啟真人對話，建立 HumanThread。
 同一筆 `replyId` 只能 open 一次（重複呼叫回傳既有 thread）。
 
 **Response `201`**
@@ -481,7 +574,7 @@ Gov 主動開啟後建立，市民定期 polling 發現；進入後透過 WebSoc
 
 ### `POST /gov/resources/:rid/pdf`
 
-上傳資源相關 PDF 文件。  
+上傳資源相關 PDF 文件。
 後端自動解析文字，存入 `gov_resources/{rid}.pdfText`，供 GovAgent 的 `query_resource_pdf` 工具讀取。
 
 **Request** — `multipart/form-data`

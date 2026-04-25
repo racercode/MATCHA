@@ -1,4 +1,4 @@
-import type { ChannelBroadcast, GovernmentResource, AgentThread, ThreadMessage } from '@matcha/shared-types'
+import type { ChannelMessage, GovernmentResource, AgentThread, ThreadMessage } from '@matcha/shared-types'
 
 export interface MatchDecision {
   eligible: boolean
@@ -9,7 +9,7 @@ export interface MatchDecision {
 }
 
 export interface MatchAssessment {
-  broadcast: ChannelBroadcast
+  channelMessage: ChannelMessage
   resource: GovernmentResource
   decision: MatchDecision
 }

@@ -13,7 +13,6 @@ exports.MOCK_PERSONA = {
     uid: 'mock-uid-001',
     displayName: '陳小明',
     summary: '正在尋找就業輔導和職業培訓資源的年輕人',
-    tags: ['就業', '職訓', '青年'],
     needs: ['就業輔導', '職業培訓'],
     offers: ['軟體開發經驗', '社區志工'],
     updatedAt: Date.now(),
@@ -25,7 +24,6 @@ exports.MOCK_RESOURCE = {
     name: '青年就業促進計畫',
     description: '提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢',
     eligibilityCriteria: ['年齡 18–29 歲', '具中華民國國籍', '非在學中'],
-    tags: ['就業', '青年', '補助'],
     contactUrl: 'https://www.mol.gov.tw',
     createdAt: Date.now(),
 };
@@ -45,7 +43,5 @@ exports.MOCK_PEER_PREVIEW = {
     uid: 'mock-uid-002',
     displayName: '林小華',
     summary: '對社會企業和公共政策有興趣，想找同路人交流',
-    tags: ['社會企業', '公共政策', '青年'],
-    commonTags: ['青年'],
 };
 //# sourceMappingURL=index.js.map

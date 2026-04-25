@@ -4,7 +4,7 @@ import { parseMatchDecision } from './pipeline.js'
 import { readChannelToolWrapper } from './toolWrappers/readChannel.js'
 import { queryProgramDocsToolWrapper } from './toolWrappers/queryProgramDocs.js'
 import { proposeMatchToolWrapper } from './toolWrappers/proposeMatch.js'
-import { fakeChannelBroadcasts, fakeGovernmentResources } from './fakeData.js'
+import { fakeChannelMessages, fakeGovernmentResources } from './fakeData.js'
 import type { MatchDecision, MatchAssessment } from './types.js'
 
 // ---------------------------------------------------------------------------
@@ -99,22 +99,22 @@ describe('parseMatchDecision', () => {
 // ---------------------------------------------------------------------------
 
 describe('readChannelToolWrapper', () => {
-  it('returns all fake broadcasts when no filter', () => {
-    const { broadcasts } = readChannelToolWrapper()
-    assert.equal(broadcasts.length, fakeChannelBroadcasts.length)
+  it('returns all fake messages when no filter', () => {
+    const { messages } = readChannelToolWrapper()
+    assert.equal(messages.length, fakeChannelMessages.length)
   })
 
   it('filters by since', () => {
     const cutoff = Date.now() - 20_000
-    const { broadcasts } = readChannelToolWrapper({ since: cutoff })
-    for (const b of broadcasts) {
-      assert.ok(b.publishedAt > cutoff)
+    const { messages } = readChannelToolWrapper({ since: cutoff })
+    for (const message of messages) {
+      assert.ok(message.publishedAt > cutoff)
     }
   })
 
   it('limits result count', () => {
-    const { broadcasts } = readChannelToolWrapper({ limit: 1 })
-    assert.equal(broadcasts.length, 1)
+    const { messages } = readChannelToolWrapper({ limit: 1 })
+    assert.equal(messages.length, 1)
   })
 })
 
@@ -168,7 +168,7 @@ describe('proposeMatchToolWrapper', () => {
 
   it('creates a thread and initial message with correct shape', () => {
     const assessment: MatchAssessment = {
-      broadcast: fakeChannelBroadcasts[0],
+      channelMessage: fakeChannelMessages[0],
       resource: fakeGovernmentResources[1],
       decision: mockDecision,
     }
@@ -177,7 +177,7 @@ describe('proposeMatchToolWrapper', () => {
 
     assert.equal(thread.type, 'gov_user')
     assert.equal(thread.initiatorId, `gov:${fakeGovernmentResources[1].rid}`)
-    assert.equal(thread.responderId, `user:${fakeChannelBroadcasts[0].uid}`)
+    assert.equal(thread.responderId, `user:${fakeChannelMessages[0].uid}`)
     assert.equal(thread.status, 'negotiating')
     assert.equal(thread.matchScore, 90)
     assert.equal(thread.summary, mockDecision.reason)
@@ -194,13 +194,14 @@ describe('proposeMatchToolWrapper', () => {
     assert.equal(initialMessage.content.score, mockDecision.score)
     assert.deepEqual(initialMessage.content.missingInfo, mockDecision.missingInfo)
     assert.equal(initialMessage.content.resourceId, fakeGovernmentResources[1].rid)
-    assert.equal(initialMessage.content.targetUserId, fakeChannelBroadcasts[0].uid)
+    assert.equal(initialMessage.content.channelMessageId, fakeChannelMessages[0].msgId)
+    assert.equal(initialMessage.content.targetUserId, fakeChannelMessages[0].uid)
     assert.ok(initialMessage.createdAt > 0)
   })
 
   it('generates deterministic tid', () => {
     const assessment: MatchAssessment = {
-      broadcast: fakeChannelBroadcasts[0],
+      channelMessage: fakeChannelMessages[0],
       resource: fakeGovernmentResources[0],
       decision: mockDecision,
     }
@@ -211,7 +212,7 @@ describe('proposeMatchToolWrapper', () => {
 
   it('generates deterministic initial message id', () => {
     const assessment: MatchAssessment = {
-      broadcast: fakeChannelBroadcasts[0],
+      channelMessage: fakeChannelMessages[0],
       resource: fakeGovernmentResources[0],
       decision: mockDecision,
     }
