@@ -1,4 +1,4 @@
-import type { ChannelBroadcast, GovernmentResource } from '@matcha/shared-types'
+import type { ChannelMessage, GovernmentResource } from '@matcha/shared-types'
 import { client } from './managedAgent.js'
 import {
   proposeMatchToolWrapper,
@@ -80,7 +80,7 @@ function parseGovAgentFinalResponse(rawText: string): GovAgentPipelineResult | n
 
 export async function runGovAgentForChannelUpdate(
   sessionId: string,
-  broadcast: ChannelBroadcast,
+  channelMessage: ChannelMessage,
   context: GovToolRuntimeContext & { resourceName?: string },
 ): Promise<GovAgentPipelineResult | null> {
   const stream = await client.beta.sessions.events.stream(sessionId)
@@ -95,7 +95,7 @@ export async function runGovAgentForChannelUpdate(
             text: JSON.stringify({
               task: 'channel_updated',
               instructions: [
-                'A new ChannelBroadcast was published.',
+                'A new ChannelMessage was published.',
                 'Use read_channel if you need recent channel context.',
                 'Use query_program_docs to inspect the single government resource bound to this resource agent.',
                 'Evaluate only this bound resource. Do not ask for or propose another resource.',
@@ -105,7 +105,7 @@ export async function runGovAgentForChannelUpdate(
               agencyId: context.agencyId,
               resourceId: context.resourceId,
               resourceName: context.resourceName,
-              channelBroadcast: broadcast,
+              channelMessage,
             }),
           },
         ],
@@ -179,17 +179,17 @@ export async function runGovAgentForChannelUpdate(
 
 export async function runGovAgentPipeline(
   resourceAgents: Array<{ sessionId: string; resource: GovernmentResource }>,
-  broadcasts: ChannelBroadcast[],
+  messages: ChannelMessage[],
   threshold = 70,
 ): Promise<GovAgentPipelineResult[]> {
   const results: GovAgentPipelineResult[] = []
 
-  for (const broadcast of broadcasts) {
-    console.log(`[Gov Agent] Channel update: ${broadcast.displayName}`)
+  for (const message of messages) {
+    console.log(`[Gov Agent] Channel update: ${message.uid} (${message.msgId})`)
 
     for (const { sessionId, resource } of resourceAgents) {
       console.log(`  [Resource Agent] ${resource.name} (${resource.rid})`)
-      const result = await runGovAgentForChannelUpdate(sessionId, broadcast, {
+      const result = await runGovAgentForChannelUpdate(sessionId, message, {
         agencyId: resource.agencyId,
         resourceId: resource.rid,
         resourceName: resource.name,

@@ -502,7 +502,7 @@ triggerGovAgent(msgId, summary)
   → for each active gov_resource:
       getOrCreateSession('gov', govId)
       sessions.events.send({
-        user.message: "New broadcast from citizen: {summary}"
+        user.message: "New channel message from citizen: {summary}"
       })
       → agent calls query_resource_pdf()  → reads resource description + eligibility from Firestore
       → agent calls assess_fit()          → returns score 0-100 + rationale

@@ -5,7 +5,7 @@ description: Create a draft match thread and initial message for an eligible mat
 
 # propose_match
 
-Use this skill when Claude has decided that a persona broadcast and government resource should become a `gov_user` match.
+Use this skill when Claude has decided that a channel message and government resource should become a `gov_user` match.
 
 ## Input
 

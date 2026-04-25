@@ -12,7 +12,6 @@ export interface UserPersona {
     displayName: string;
     photoURL?: string;
     summary: string;
-    tags: string[];
     needs: string[];
     offers: string[];
     updatedAt: number;
@@ -22,15 +21,11 @@ export interface PeerPreview {
     displayName: string;
     photoURL?: string;
     summary: string;
-    tags: string[];
-    commonTags: string[];
 }
-export interface ChannelBroadcast {
+export interface ChannelMessage {
+    msgId: string;
     uid: string;
-    displayName: string;
     summary: string;
-    tags: string[];
-    needs: string[];
     publishedAt: number;
 }
 export interface GovernmentResource {
@@ -40,7 +35,6 @@ export interface GovernmentResource {
     name: string;
     description: string;
     eligibilityCriteria: string[];
-    tags: string[];
     contactUrl?: string;
     createdAt: number;
 }
@@ -155,7 +149,6 @@ export interface GovStats {
     humanTakeoverCount: number;
     activeThreads: number;
     matchedToday: number;
-    tagDistribution: Record<string, number>;
     needsDistribution: Record<string, number>;
 }
 export declare const MOCK_PERSONA: UserPersona;

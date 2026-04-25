@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const GOV_AGENT_MODEL = 'claude-haiku-4-5'
-const GOV_AGENT_CONFIG_VERSION = 'gov-resource-tools-v3'
+const GOV_AGENT_CONFIG_VERSION = 'gov-resource-tools-v4'
 const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 const DEFAULT_AGENCY_NAME = '臺北市青年局'
 const DEFAULT_SESSION_KEY = 'default'
@@ -56,12 +56,12 @@ const GOV_CUSTOM_TOOLS = [
   {
     name: 'read_channel',
     type: 'custom' as const,
-    description: 'Read recent persona broadcasts from the central channel. Use this to inspect channel updates before deciding whether to match.',
+    description: 'Read recent channel messages from the central channel. Use this to inspect channel updates before deciding whether to match.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        since: { type: 'number', description: 'Optional unix ms timestamp. Only broadcasts newer than this are returned.' },
-        limit: { type: 'number', description: 'Optional max number of broadcasts to return.' },
+        since: { type: 'number', description: 'Optional unix ms timestamp. Only messages newer than this are returned.' },
+        limit: { type: 'number', description: 'Optional max number of messages to return.' },
       },
     },
   },
@@ -85,9 +85,9 @@ const GOV_CUSTOM_TOOLS = [
       properties: {
         assessment: {
           type: 'object',
-          description: 'MatchAssessment containing broadcast, resource, and decision.',
+          description: 'MatchAssessment containing channelMessage, resource, and decision.',
           properties: {
-            broadcast: { type: 'object', description: 'The ChannelBroadcast being evaluated.' },
+            channelMessage: { type: 'object', description: 'The ChannelMessage being evaluated.' },
             resource: { type: 'object', description: 'The GovernmentResource being matched.' },
             decision: {
               type: 'object',
@@ -102,7 +102,7 @@ const GOV_CUSTOM_TOOLS = [
               required: ['eligible', 'score', 'reason', 'suggestedFirstMessage'],
             },
           },
-          required: ['broadcast', 'resource', 'decision'],
+          required: ['channelMessage', 'resource', 'decision'],
         },
       },
       required: ['assessment'],

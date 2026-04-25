@@ -18,10 +18,10 @@ export function proposeMatchToolWrapper(input: ProposeMatchInput): ProposeMatchO
   const suggestedFirstMessage = decision.suggestedFirstMessage ?? ''
 
   const thread: AgentThread = {
-    tid: `tid-gov-${assessment.resource.rid}-${assessment.broadcast.uid}`,
+    tid: `tid-gov-${assessment.resource.rid}-${assessment.channelMessage.uid}`,
     type: 'gov_user',
     initiatorId: `gov:${assessment.resource.rid}`,
-    responderId: `user:${assessment.broadcast.uid}`,
+    responderId: `user:${assessment.channelMessage.uid}`,
     status: 'negotiating',
     matchScore: decision.score,
     summary: reason,
@@ -32,7 +32,7 @@ export function proposeMatchToolWrapper(input: ProposeMatchInput): ProposeMatchO
   }
 
   const initialMessage: ThreadMessage = {
-    mid: `msg-gov-${assessment.resource.rid}-${assessment.broadcast.uid}`,
+    mid: `msg-gov-${assessment.resource.rid}-${assessment.channelMessage.uid}`,
     tid: thread.tid,
     from: `gov_agent:${assessment.resource.rid}`,
     type: 'decision',
@@ -44,7 +44,8 @@ export function proposeMatchToolWrapper(input: ProposeMatchInput): ProposeMatchO
       score: decision.score,
       missingInfo: decision.missingInfo ?? [],
       contactUrl: assessment.resource.contactUrl,
-      targetUserId: assessment.broadcast.uid,
+      channelMessageId: assessment.channelMessage.msgId,
+      targetUserId: assessment.channelMessage.uid,
     },
     createdAt: now,
   }

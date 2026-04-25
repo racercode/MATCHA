@@ -1,25 +1,22 @@
-import type { ChannelBroadcast, GovernmentResource } from '@matcha/shared-types'
+import type { ChannelMessage, GovernmentResource } from '@matcha/shared-types'
 
-export const fakeChannelBroadcasts: ChannelBroadcast[] = [
+export const fakeChannelMessages: ChannelMessage[] = [
   {
+    msgId: 'msg-channel-xiaoya-001',
     uid: 'user-xiaoya-001',
-    displayName: '小雅',
     summary: '中文系大三，對品牌設計、排版和文組轉職有興趣，目前想找實習或職涯探索資源。',
-    needs: ['職涯諮詢', '實習媒合', '職業培訓'],
     publishedAt: Date.now() - 60_000,
   },
   {
+    msgId: 'msg-channel-ming-002',
     uid: 'user-ming-002',
-    displayName: '阿明',
     summary: '剛退伍，想找穩定工作，對餐飲、門市和政府職訓補助有興趣。',
-    needs: ['就業輔導', '職業培訓'],
     publishedAt: Date.now() - 30_000,
   },
   {
+    msgId: 'msg-channel-lin-003',
     uid: 'user-lin-003',
-    displayName: '小林',
     summary: '正在準備創業，想了解青年創業貸款、商業模式輔導和政府補助。',
-    needs: ['創業輔導', '資金補助'],
     publishedAt: Date.now() - 10_000,
   },
 ]
