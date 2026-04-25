@@ -1,3 +1,4 @@
+import pLimit from 'p-limit'
 import type { GovAgentPipelineResult } from './types.js'
 import { initGovManagedAgentSession } from './managedAgent.js'
 import { runGovAgentPipeline } from './pipeline.js'
@@ -9,6 +10,13 @@ import {
   tryStartGovAgentRun,
   type GovAgentRunStatus,
 } from '../../lib/govAgentRunsRepo.js'
+
+function getGovAgentConcurrency(): number {
+  const raw = process.env.GOV_AGENT_CONCURRENCY
+  if (!raw) return 1
+  const n = parseInt(raw, 10)
+  return Number.isFinite(n) && n >= 1 ? n : 1
+}
 
 export interface GovAgentRunForMessageOptions {
   threshold?: number
@@ -59,20 +67,52 @@ export async function handleGovAgentRunForMessage(
   }
 
   try {
+    const concurrency = getGovAgentConcurrency()
     const resources = await listGovernmentResources()
-    const resourceAgents: Array<{ resource: typeof resources[number]; sessionId: string }> = []
-    for (const resource of resources) {
-      const sessionId = await initGovManagedAgentSession({
-        agencyId: resource.agencyId,
-        agencyName: resource.agencyName,
-        resourceId: resource.rid,
-        resourceName: resource.name,
-        sessionKey: messageId,
-      })
-      resourceAgents.push({ resource, sessionId })
+
+    let resourceAgents: Array<{ resource: typeof resources[number]; sessionId: string }>
+
+    if (concurrency <= 1) {
+      // === Sequential：原本的 for loop ===
+      resourceAgents = []
+      for (const resource of resources) {
+        const sessionId = await initGovManagedAgentSession({
+          agencyId: resource.agencyId,
+          agencyName: resource.agencyName,
+          resourceId: resource.rid,
+          resourceName: resource.name,
+          sessionKey: messageId,
+        })
+        resourceAgents.push({ resource, sessionId })
+      }
+    } else {
+      // === Parallel：session init 也平行化 ===
+      const limit = pLimit(concurrency)
+      const settled = await Promise.allSettled(
+        resources.map((resource) =>
+          limit(async () => {
+            const sessionId = await initGovManagedAgentSession({
+              agencyId: resource.agencyId,
+              agencyName: resource.agencyName,
+              resourceId: resource.rid,
+              resourceName: resource.name,
+              sessionKey: messageId,
+            })
+            return { resource, sessionId }
+          }),
+        ),
+      )
+      resourceAgents = []
+      for (const entry of settled) {
+        if (entry.status === 'fulfilled') {
+          resourceAgents.push(entry.value)
+        } else {
+          console.error(`[Gov Agent] Session init failed:`, entry.reason)
+        }
+      }
     }
 
-    const matches = await runGovAgentPipeline(resourceAgents, [message], options.threshold)
+    const matches = await runGovAgentPipeline(resourceAgents, [message], options.threshold, concurrency)
     await completeGovAgentRun(messageId, {
       resourceCount: resources.length,
       matchCount: matches.length,

@@ -1,4 +1,5 @@
 import { toMs, type ChannelMessage, type GovernmentResource } from '@matcha/shared-types'
+import pLimit from 'p-limit'
 import { client } from './managedAgent.js'
 import {
   buildChannelReplyFromAssessment,
@@ -262,52 +263,95 @@ export async function runGovAgentForChannelUpdate(
   })
 }
 
+async function processAgentResult(
+  result: GovAgentPipelineResult | null,
+  resource: GovernmentResource,
+  threshold: number,
+  results: GovAgentPipelineResult[],
+): Promise<void> {
+  const matched = Boolean(result && (result.assessment.decision?.score ?? 0) >= threshold)
+
+  if (hasFirebaseAdminEnv()) {
+    try {
+      await recordMatchAttempt(resource.rid, matched, {
+        agencyId: resource.agencyId,
+        resourceName: resource.name,
+      })
+    } catch (err) {
+      console.error(`  [match_stats] Failed to record: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  if (!result) {
+    console.log(`  -> [${resource.rid}] No match proposed`)
+  } else if (!matched) {
+    console.log(`  -> [${resource.rid}] Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
+  } else {
+    await persistChannelReply(result)
+    await persistHumanThread(result)
+    results.push(result)
+    console.log(`  -> [${resource.rid}] Channel reply and human thread persisted: ${result.reply.replyId}`)
+  }
+}
+
 export async function runGovAgentPipeline(
   resourceAgents: Array<{ sessionId: string; resource: GovernmentResource }>,
   messages: ChannelMessage[],
   threshold = 30,
+  concurrency = 1,
 ): Promise<GovAgentPipelineResult[]> {
   const results: GovAgentPipelineResult[] = []
 
   for (const message of messages) {
-    console.log(`[Gov Agent] Channel update: ${message.uid} (${message.msgId})`)
+    console.log(`[Gov Agent] Channel update: ${message.uid} (${message.msgId}) [concurrency=${concurrency}]`)
 
-    for (const { sessionId, resource } of resourceAgents) {
-      console.log(`  [Resource Agent] ${resource.name} (${resource.rid})`)
-      const result = await runGovAgentForChannelUpdate(
-        sessionId,
-        message,
-        {
-          agencyId: resource.agencyId,
-          resourceId: resource.rid,
-          resource,
-          resourceName: resource.name,
-        },
-        threshold,
+    if (concurrency <= 1) {
+      // === Sequential 路徑：原本的 for loop，完全不動 ===
+      for (const { sessionId, resource } of resourceAgents) {
+        console.log(`  [Resource Agent] ${resource.name} (${resource.rid})`)
+        const result = await runGovAgentForChannelUpdate(
+          sessionId,
+          message,
+          {
+            agencyId: resource.agencyId,
+            resourceId: resource.rid,
+            resource,
+            resourceName: resource.name,
+          },
+          threshold,
+        )
+        await processAgentResult(result, resource, threshold, results)
+      }
+    } else {
+      // === Parallel 路徑：Promise.allSettled + p-limit ===
+      const limit = pLimit(concurrency)
+
+      const settled = await Promise.allSettled(
+        resourceAgents.map(({ sessionId, resource }) =>
+          limit(async () => {
+            console.log(`  [Resource Agent] ${resource.name} (${resource.rid}) [parallel]`)
+            const result = await runGovAgentForChannelUpdate(
+              sessionId,
+              message,
+              {
+                agencyId: resource.agencyId,
+                resourceId: resource.rid,
+                resource,
+                resourceName: resource.name,
+              },
+              threshold,
+            )
+            return { result, resource }
+          }),
+        ),
       )
 
-      const matched = Boolean(result && (result.assessment.decision?.score ?? 0) >= threshold)
-
-      if (hasFirebaseAdminEnv()) {
-        try {
-          await recordMatchAttempt(resource.rid, matched, {
-            agencyId: resource.agencyId,
-            resourceName: resource.name,
-          })
-        } catch (err) {
-          console.error(`  [match_stats] Failed to record: ${err instanceof Error ? err.message : err}`)
+      for (const entry of settled) {
+        if (entry.status === 'fulfilled') {
+          await processAgentResult(entry.value.result, entry.value.resource, threshold, results)
+        } else {
+          console.error(`  [Resource Agent] Failed:`, entry.reason)
         }
-      }
-
-      if (!result) {
-        console.log('  -> No match proposed')
-      } else if (!matched) {
-        console.log(`  -> Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
-      } else {
-        await persistChannelReply(result)
-        await persistHumanThread(result)
-        results.push(result)
-        console.log(`  -> Channel reply and human thread persisted: ${result.reply.replyId}`)
       }
     }
   }
