@@ -91,22 +91,22 @@ describe('parseMatchDecision', () => {
 // ---------------------------------------------------------------------------
 
 describe('readChannelToolWrapper', () => {
-  it('returns all fake messages when no filter', () => {
-    const { messages } = readChannelToolWrapper()
-    assert.equal(messages.length, fakeChannelMessages.length)
+  it('returns messages from Firestore when no filter', async () => {
+    const { messages } = await readChannelToolWrapper()
+    assert.ok(Array.isArray(messages))
   })
 
-  it('filters by since', () => {
+  it('filters by since', async () => {
     const cutoff = Date.now() - 20_000
-    const { messages } = readChannelToolWrapper({ since: cutoff })
+    const { messages } = await readChannelToolWrapper({ since: cutoff })
     for (const message of messages) {
       assert.ok(toMs(message.publishedAt) > cutoff)
     }
   })
 
-  it('limits result count', () => {
-    const { messages } = readChannelToolWrapper({ limit: 1 })
-    assert.equal(messages.length, 1)
+  it('limits result count', async () => {
+    const { messages } = await readChannelToolWrapper({ limit: 1 })
+    assert.ok(messages.length <= 1)
   })
 })
 
@@ -157,14 +157,14 @@ describe('writeChannelReplyToolWrapper', () => {
     missingInfo: [],
   }
 
-  it('creates a channel reply with correct shape', () => {
+  it('creates a channel reply with correct shape', async () => {
     const assessment: MatchAssessment = {
       channelMessage: fakeChannelMessages[0],
       resource: fakeGovernmentResources[1],
       decision: mockDecision,
     }
 
-    const { reply } = writeChannelReplyToolWrapper({ assessment })
+    const { reply } = await writeChannelReplyToolWrapper({ assessment })
 
     assert.equal(reply.messageId, fakeChannelMessages[0].msgId)
     assert.equal(reply.govId, fakeGovernmentResources[1].rid)
@@ -173,14 +173,14 @@ describe('writeChannelReplyToolWrapper', () => {
     assert.ok(toMs(reply.createdAt) > 0)
   })
 
-  it('generates deterministic reply id', () => {
+  it('generates deterministic reply id', async () => {
     const assessment: MatchAssessment = {
       channelMessage: fakeChannelMessages[0],
       resource: fakeGovernmentResources[0],
       decision: mockDecision,
     }
 
-    const { reply } = writeChannelReplyToolWrapper({ assessment })
+    const { reply } = await writeChannelReplyToolWrapper({ assessment })
     assert.equal(reply.replyId, 'reply-gov-rid-youth-career-001-msg-channel-xiaoya-001')
   })
 })

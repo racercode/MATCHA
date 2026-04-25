@@ -1,29 +1,33 @@
 import { Router, type Router as IRouter } from 'express'
 import { toMs } from '@matcha/shared-types'
 import { verifyToken, type AuthedRequest } from '../middleware/auth.js'
-import { peerThreads, peerMessages, humanThreads, humanMessages } from '../lib/store.js'
+import { db } from '../lib/firebase.js'
 
 const router: IRouter = Router()
 router.use(verifyToken)
 
 // GET /peer-threads/:tid/messages
-router.get('/peer-threads/:tid/messages', (req, res) => {
+router.get('/peer-threads/:tid/messages', async (req, res) => {
   const { uid } = req as unknown as AuthedRequest
   const { tid } = req.params
   const before = req.query.before ? Number(req.query.before) : Infinity
   const limit = Math.min(Number(req.query.limit) || 50, 100)
 
-  const thread = peerThreads.get(tid)
-  if (!thread) {
+  const threadDoc = await db.collection('peer_threads').doc(tid).get()
+  if (!threadDoc.exists) {
     res.status(404).json({ success: false, error: 'Thread 不存在', data: null })
     return
   }
+  const thread = threadDoc.data()!
   if (thread.userAId !== uid && thread.userBId !== uid) {
     res.status(403).json({ success: false, error: '無存取權限', data: null })
     return
   }
 
-  const all = (peerMessages.get(tid) ?? [])
+  type MsgDoc = { mid: string; from: string; content: string; createdAt: { seconds: number; nanoseconds: number } }
+  const msgsSnap = await db.collection('peer_threads').doc(tid).collection('messages').get()
+  const all: MsgDoc[] = msgsSnap.docs
+    .map(d => ({ mid: d.id, ...(d.data() as Omit<MsgDoc, 'mid'>) }))
     .filter(m => toMs(m.createdAt) < before)
     .sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))
 
@@ -32,18 +36,18 @@ router.get('/peer-threads/:tid/messages', (req, res) => {
 })
 
 // GET /human-threads/:tid/messages
-// Shared endpoint: caller must be the citizen userId or the gov_staff whose govId matches
-router.get('/human-threads/:tid/messages', (req, res) => {
+router.get('/human-threads/:tid/messages', async (req, res) => {
   const { uid, role, govId } = req as unknown as AuthedRequest
   const { tid } = req.params
   const before = req.query.before ? Number(req.query.before) : Infinity
   const limit = Math.min(Number(req.query.limit) || 50, 100)
 
-  const thread = humanThreads.get(tid)
-  if (!thread) {
+  const threadDoc = await db.collection('human_threads').doc(tid).get()
+  if (!threadDoc.exists) {
     res.status(404).json({ success: false, error: 'Thread 不存在', data: null })
     return
   }
+  const thread = threadDoc.data()!
 
   const hasAccess =
     (role === 'citizen' && thread.userId === uid) ||
@@ -54,7 +58,10 @@ router.get('/human-threads/:tid/messages', (req, res) => {
     return
   }
 
-  const all = (humanMessages.get(tid) ?? [])
+  type MsgDoc = { mid: string; from: string; content: string; createdAt: { seconds: number; nanoseconds: number } }
+  const msgsSnap = await db.collection('human_threads').doc(tid).collection('messages').get()
+  const all: MsgDoc[] = msgsSnap.docs
+    .map(d => ({ mid: d.id, ...(d.data() as Omit<MsgDoc, 'mid'>) }))
     .filter(m => toMs(m.createdAt) < before)
     .sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))
 

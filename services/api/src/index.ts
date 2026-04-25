@@ -3,7 +3,7 @@ import http from 'http'
 import { createApp } from './app.js'
 import { createWss, upgradeHandler } from './ws/handler.js'
 
-const PORT = Number(process.env.PORT ?? 3000)
+const PORT = Number(process.env.PORT ?? 3001)
 const app = createApp()
 const server = http.createServer(app)
 const wss = createWss()
@@ -24,5 +24,5 @@ server.listen(PORT, '0.0.0.0', () => {
 const enableMock = process.argv.includes('--mock') || process.env.ENABLE_MOCK === 'true'
 if (enableMock) {
   const { startMockServer } = await import('./mock/server.js')
-  await startMockServer(3001)
+  await startMockServer(3002)
 }

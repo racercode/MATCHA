@@ -1,6 +1,6 @@
-import type { UserPersona, SwipeCard, ChannelBroadcast } from '@matcha/shared-types'
+import type { SwipeCard } from '@matcha/shared-types'
 
-export type { UserPersona, SwipeCard, ChannelBroadcast }
+export type { SwipeCard }
 
 export interface PersonaToolContext {
   uid: string
@@ -13,21 +13,8 @@ export interface UpdatePersonaInput {
   offers: string[]
 }
 
-export interface GenerateSwipeCardInput {
-  question: string
-  leftLabel: string
-  rightLabel: string
-  leftValue: string
-  rightValue: string
-}
-
 export interface PublishToChannelInput {
   summary: string
   needs: string[]
 }
 
-export interface PersonaBroadcastResult {
-  broadcast: ChannelBroadcast
-  published: boolean
-  msgId: string
-}

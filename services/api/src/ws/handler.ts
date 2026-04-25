@@ -1,36 +1,15 @@
-9import type { IncomingMessage } from 'http'
+import type { IncomingMessage } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
-import {
-  peerThreads,
-  peerMessages,
-  humanThreads,
-  humanMessages,
-  personas,
-  govStaff,
-  findGovStaffUidByGovId,
-} from '../lib/store.js'
-import { msToTimestamp, toMs, type ServerEvent } from '@matcha/shared-types'
+import { msToTimestamp } from '@matcha/shared-types'
+import { db } from '../lib/firebase.js'
+import { clients, userRoles, userGovIds, broadcast } from './push.js'
+import type { ServerEvent } from './push.js'
+import { initPersonaManagedAgentSession } from '../agent/persona/managedAgent.js'
+import { runPersonaAgentTurn } from '../agent/persona/pipeline.js'
 
-// ── Connection registry ───────────────────────────────────────────────────────
+export { broadcast }
 
-// uid → set of open sockets (one user may have multiple tabs)
-const clients = new Map<string, Set<WebSocket>>()
-
-// uid → role
-const userRoles = new Map<string, 'citizen' | 'gov_staff'>()
-// uid → govId (for gov_staff only)
-const userGovIds = new Map<string, string>()
-
-// ── Broadcast helpers ─────────────────────────────────────────────────────────
-
-export function broadcast(uid: string, event: ServerEvent) {
-  const sockets = clients.get(uid)
-  if (!sockets) return
-  const payload = JSON.stringify(event)
-  for (const ws of sockets) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(payload)
-  }
-}
+// ── Socket helpers ────────────────────────────────────────────────────────────
 
 function sendToSocket(ws: WebSocket, event: ServerEvent) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event))
@@ -40,29 +19,9 @@ function sendError(ws: WebSocket, code: string, message: string) {
   sendToSocket(ws, { type: 'error', code, message })
 }
 
-// ── Persona stub ──────────────────────────────────────────────────────────────
-
-async function handlePersonaMessage(ws: WebSocket, uid: string, content: string) {
-  // Update persona summary with whatever the user said (simple stub)
-  const existing = personas.get(uid)
-  if (existing) {
-    existing.summary = content.length > 10 ? content : existing.summary
-    existing.updatedAt = Date.now()
-  } else {
-    personas.set(uid, { uid, displayName: uid, summary: content, updatedAt: Date.now() })
-  }
-
-  // Stream a canned reply simulating PersonaAgent
-  const parts = [
-    '感謝你的分享！我正在了解你的需求。',
-    '\n\n請問你目前最迫切的需求是什麼？\nA. 就業輔導  B. 創業資源  C. 法律協助  D. 其他',
-  ]
-
-  for (const part of parts) {
-    sendToSocket(ws, { type: 'agent_reply', content: part, done: false })
-    await sleep(80)
-  }
-  sendToSocket(ws, { type: 'agent_reply', content: '', done: true })
+async function findGovStaffUidByGovId(govId: string): Promise<string | undefined> {
+  const snap = await db.collection('gov_staff').where('govId', '==', govId).get()
+  return snap.empty ? undefined : snap.docs[0].id
 }
 
 // ── Event handler ─────────────────────────────────────────────────────────────
@@ -74,7 +33,13 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         sendError(ws, 'BAD_REQUEST', '缺少 content')
         return
       }
-      await handlePersonaMessage(ws, uid, msg.content)
+      try {
+        const sessionId = await initPersonaManagedAgentSession(uid)
+        await runPersonaAgentTurn(sessionId, uid, msg.content, event => sendToSocket(ws, event))
+      } catch (err) {
+        console.error('[persona] agent error:', err)
+        sendError(ws, 'AGENT_ERROR', '代理人發生錯誤，請稍後再試')
+      }
       break
     }
 
@@ -85,33 +50,30 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         return
       }
 
-      const thread = peerThreads.get(threadId)
-      if (!thread) {
+      const threadDoc = await db.collection('peer_threads').doc(threadId).get()
+      if (!threadDoc.exists) {
         sendError(ws, 'THREAD_NOT_FOUND', `Thread ${threadId} 不存在或無權限存取`)
         return
       }
+      const thread = threadDoc.data()!
       if (thread.userAId !== uid && thread.userBId !== uid) {
         sendError(ws, 'THREAD_NOT_FOUND', `Thread ${threadId} 不存在或無權限存取`)
         return
       }
 
       const now = Date.now()
-      const storeMsg = {
-        mid: `pm-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      const msgData = {
         from: `user:${uid}`,
         content,
-        createdAt: msToTimestamp(Date.now()),
+        createdAt: msToTimestamp(now),
       }
+      const msgRef = db.collection('peer_threads').doc(threadId).collection('messages').doc()
+      await msgRef.set(msgData)
+      await db.collection('peer_threads').doc(threadId).update({ updatedAt: now })
 
-      if (!peerMessages.has(threadId)) peerMessages.set(threadId, [])
-      peerMessages.get(threadId)!.push(message)
-
-      // Update thread updatedAt (store uses number)
-      thread.updatedAt = toMs(message.createdAt)
-
-      // Push to both participants
-      broadcast(thread.userAId, { type: 'peer_message', message })
-      broadcast(thread.userBId, { type: 'peer_message', message })
+      const storeMsg = { mid: msgRef.id, ...msgData }
+      broadcast(thread.userAId as string, { type: 'peer_message', message: storeMsg })
+      broadcast(thread.userBId as string, { type: 'peer_message', message: storeMsg })
       break
     }
 
@@ -122,11 +84,12 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         return
       }
 
-      const thread = humanThreads.get(threadId)
-      if (!thread) {
+      const threadDoc = await db.collection('human_threads').doc(threadId).get()
+      if (!threadDoc.exists) {
         sendError(ws, 'THREAD_NOT_FOUND', `Thread ${threadId} 不存在或無權限存取`)
         return
       }
+      const thread = threadDoc.data()!
 
       const role = userRoles.get(uid) ?? 'citizen'
       const govId = userGovIds.get(uid)
@@ -142,30 +105,19 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
 
       const now = Date.now()
       const storeFrom = role === 'citizen' ? `user:${uid}` : `gov_staff:${uid}`
-      const storeMsg = {
-        mid: `hm-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      const msgData = {
         from: storeFrom,
         content,
-        createdAt: msToTimestamp(Date.now()),
+        createdAt: msToTimestamp(now),
       }
+      const msgRef = db.collection('human_threads').doc(threadId).collection('messages').doc()
+      await msgRef.set(msgData)
+      await db.collection('human_threads').doc(threadId).update({ updatedAt: now })
 
-      if (!humanMessages.has(threadId)) humanMessages.set(threadId, [])
-      humanMessages.get(threadId)!.push(storeMsg)
-
-      thread.updatedAt = toMs(message.createdAt)
-
-      const message: ThreadMessage = {
-        mid: storeMsg.mid,
-        tid: threadId,
-        from: `human:${uid}`,
-        type: 'answer',
-        content: { text: content },
-        createdAt: now,
-      }
-
-      broadcast(thread.userId, { type: 'thread_message', message })
-      const govStaffUid = findGovStaffUidByGovId(thread.govId)
-      if (govStaffUid) broadcast(govStaffUid, { type: 'thread_message', message })
+      const storeMsg = { mid: msgRef.id, ...msgData }
+      broadcast(thread.userId as string, { type: 'human_message', message: storeMsg })
+      const govStaffUid = await findGovStaffUidByGovId(thread.govId as string)
+      if (govStaffUid) broadcast(govStaffUid, { type: 'human_message', message: storeMsg })
       break
     }
 
@@ -234,15 +186,11 @@ export async function upgradeHandler(
   }
 
   const uid = token.trim()
-  const staff = govStaff.get(uid)
-  const role: 'citizen' | 'gov_staff' = staff ? 'gov_staff' : 'citizen'
-  const govId = staff?.govId
+  const staffDoc = await db.collection('gov_staff').doc(uid).get()
+  const role: 'citizen' | 'gov_staff' = staffDoc.exists ? 'gov_staff' : 'citizen'
+  const govId = staffDoc.exists ? (staffDoc.data()!.govId as string) : undefined
 
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req, uid, role, govId)
   })
-}
-
-function sleep(ms: number) {
-  return new Promise<void>(r => setTimeout(r, ms))
 }

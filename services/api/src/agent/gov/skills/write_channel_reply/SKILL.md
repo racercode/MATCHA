@@ -1,5 +1,5 @@
 ---
-name: write_channel_reply
+name: write-channel-reply
 description: Write a channel reply for an eligible government resource match
 ---
 

@@ -20,6 +20,77 @@ import {
   type ServerEvent,
 } from '@matcha/shared-types'
 
+interface ThreadMessage {
+  mid: string
+  tid: string
+  from: string
+  type: string
+  content: { text: string }
+  createdAt: number
+}
+
+const mockPeerThreadItems = [
+  {
+    thread: {
+      tid: 'peer-tid-001',
+      type: 'user_user',
+      initiatorId: `user:${MOCK_PERSONA.uid}`,
+      responderId: 'user:peer-uid-001',
+      status: 'matched',
+      matchScore: 91,
+      summary: 'Persona agent 與品牌設計取向的 peer 對話紀錄。',
+      userPresence: 'agent',
+      govPresence: 'agent',
+      peerPresence: 'agent',
+      createdAt: Date.now() - 1000 * 60 * 60 * 20,
+      updatedAt: Date.now() - 1000 * 60 * 60 * 18,
+    },
+    peer: {
+      uid: 'peer-uid-001',
+      displayName: '想轉品牌設計的ian',
+      summary: '文組背景，正在轉職 UI / 品牌設計，自學 Figma 兩個月，靠接小案子建立作品集',
+    },
+    bullets: ['先找練習案子再考隨班課程，省時省錢', 'Behance 比 IG 更能被設計公司看到', '跨域補助和實習可以同期進行'],
+  },
+  {
+    thread: {
+      tid: 'peer-tid-002',
+      type: 'user_user',
+      initiatorId: `user:${MOCK_PERSONA.uid}`,
+      responderId: 'user:peer-uid-002',
+      status: 'matched',
+      matchScore: 84,
+      summary: 'Persona agent 與包裝設計取向的 peer 對話紀錄。',
+      userPresence: 'agent',
+      govPresence: 'agent',
+      peerPresence: 'agent',
+      createdAt: Date.now() - 1000 * 60 * 60 * 72,
+      updatedAt: Date.now() - 1000 * 60 * 60 * 70,
+    },
+    peer: {
+      uid: 'peer-uid-002',
+      displayName: '文組轉設計的karina',
+      summary: '廣告文案背景，目前在台北市設計培訓課，對品牌設計有興趣',
+    },
+    bullets: ['培訓課程名額比較到，先前先查', '文字能力是品牌設計的優勢，不用擔心'],
+  },
+]
+
+const MOCK_THREAD = {
+  tid: 'ht-mock-001',
+  type: 'gov_user',
+  userId: MOCK_PERSONA.uid,
+  govId: MOCK_RESOURCE.rid,
+  channelReplyId: 'r-001',
+  matchScore: 87,
+  status: 'open',
+  userPresence: 'agent' as string,
+  createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60),
+  updatedAt: msToTimestamp(Date.now() - 1000 * 60 * 30),
+}
+
+const mockThreads = [MOCK_THREAD]
+
 export function createMockApp(): Express {
   const app = express()
   app.use(cors())
@@ -41,7 +112,6 @@ export function createMockApp(): Express {
     res.json({ success: true, data: MOCK_PERSONA })
   })
 
-  // Persona Chat via SSE (mirrors the WS persona_message / agent_reply contract)
   app.post('/me/chat', async (_req, res) => {
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
@@ -58,7 +128,6 @@ export function createMockApp(): Express {
     res.end()
   })
 
-  // Swipe card stub
   app.post('/me/swipe', (_req, res) => {
     res.json({
       success: true,
@@ -98,69 +167,37 @@ export function createMockApp(): Express {
   })
 
   // -------------------------------------------------------------------------
-  // Citizen — Peer Threads (Coffee Chat polling)
+  // Citizen — Peer Threads (Coffee Chat)
   // -------------------------------------------------------------------------
-
-  const mockPeerThreadItems = [
-    {
-      tid: 'peer-tid-001',
-      type: 'user_user',
-      peer: {
-        uid: 'peer-uid-001',
-        displayName: '想轉品牌設計的ian',
-        summary: '文組背景，正在轉職 UI / 品牌設計，自學 Figma 兩個月，靠接小案子建立作品集',
-      },
-      bullets: ['先找練習案子再考隨班課程，省時省錢', 'Behance 比 IG 更能被設計公司看到', '跨域補助和實習可以同期進行'],
-      matchRationale: '兩人都是文組背景轉設計，且都在尋找作品集建立方向',
-      status: 'active',
-      createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 20),
-      updatedAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 18),
-    },
-    {
-      tid: 'peer-tid-002',
-      type: 'user_user',
-      peer: {
-        uid: 'peer-uid-002',
-        displayName: '文組轉設計的karina',
-        summary: '廣告文案背景，目前在台北市設計培訓課，對品牌設計有興趣',
-      },
-      bullets: ['培訓課程名額比較到，先前先查', '文字能力是品牌設計的優勢，不用擔心'],
-      matchRationale: '兩人對品牌設計與職涯轉換都有興趣，背景互補',
-      status: 'active',
-      createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 72),
-      updatedAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 70),
-    },
-  ]
 
   app.get('/me/peer-threads', (_req, res) => {
-    res.json({ success: true, data: { items: mockPeerThreadItems, hasMore: false } })
+    res.json({ success: true, data: { items: mockPeerThreadItems, total: mockPeerThreadItems.length, hasMore: false } })
   })
 
-  app.get('/peer-threads/:tid/messages', (req, res) => {
-    res.json({
-      success: true,
-      data: {
-        items: [
-          {
-            mid: `${req.params.tid}-msg-1`,
-            from: 'coffee_agent',
-            content: '你們兩個都是文組背景轉設計，應該有很多可以聊的！',
-            createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 19),
-          },
-          {
-            mid: `${req.params.tid}-msg-2`,
-            from: `user:${MOCK_PEER_PREVIEW.uid}`,
-            content: '對，我也覺得！你現在在學哪些設計工具呢？',
-            createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 18),
-          },
-        ],
-        hasMore: false,
+  app.get('/me/peer-threads/:tid/messages', (req, res) => {
+    const msgs = [
+      {
+        mid: `${req.params.tid}-msg-1`,
+        tid: req.params.tid,
+        from: `coffee_agent:${MOCK_PERSONA.uid}`,
+        type: 'query',
+        content: { text: '你們兩個都是文組背景轉設計，應該有很多可以聊的！' },
+        createdAt: Date.now() - 1000 * 60 * 60 * 19,
       },
-    })
+      {
+        mid: `${req.params.tid}-msg-2`,
+        tid: req.params.tid,
+        from: `user:${MOCK_PEER_PREVIEW.uid}`,
+        type: 'answer',
+        content: { text: '對，我也覺得！你現在在學哪些設計工具呢？' },
+        createdAt: Date.now() - 1000 * 60 * 60 * 18,
+      },
+    ]
+    res.json({ success: true, data: { items: msgs, total: msgs.length, hasMore: false } })
   })
 
   // -------------------------------------------------------------------------
-  // Citizen — Human Threads polling
+  // Citizen — Human Threads
   // -------------------------------------------------------------------------
 
   app.get('/me/human-threads', (_req, res) => {
@@ -169,6 +206,28 @@ export function createMockApp(): Express {
 
   app.get('/human-threads/:tid/messages', (_req, res) => {
     res.json({ success: true, data: { items: [], hasMore: false } })
+  })
+
+  // -------------------------------------------------------------------------
+  // Thread actions
+  // -------------------------------------------------------------------------
+
+  app.post('/threads/:tid/message', (req, res) => {
+    const msg: ThreadMessage = {
+      mid: `msg-${Date.now()}`,
+      tid: req.params.tid,
+      from: `human:${MOCK_PERSONA.uid}`,
+      type: 'human_note',
+      content: { text: req.body?.content ?? '' },
+      createdAt: Date.now(),
+    }
+    res.json({ success: true, data: msg })
+  })
+
+  app.post('/threads/:tid/join', (req, res) => {
+    const thread = mockThreads.find(t => t.tid === req.params.tid)
+    if (thread) thread.userPresence = 'human'
+    res.json({ success: true, data: thread ?? MOCK_THREAD })
   })
 
   // -------------------------------------------------------------------------
@@ -232,106 +291,7 @@ export function createMockApp(): Express {
   })
 
   // -------------------------------------------------------------------------
-  // REST — Peer Threads (Coffee Chat)
-  // -------------------------------------------------------------------------
-
-  const mockPeerThreadItems = [
-    {
-      thread: {
-        tid: 'peer-tid-001',
-        type: 'user_user',
-        initiatorId: `user:${MOCK_PERSONA.uid}`,
-        responderId: 'user:peer-uid-001',
-        status: 'matched',
-        matchScore: 91,
-        summary: 'Persona agent 與品牌設計取向的 peer 對話紀錄。',
-        userPresence: 'agent',
-        govPresence: 'agent',
-        peerPresence: 'agent',
-        createdAt: Date.now() - 1000 * 60 * 60 * 20,
-        updatedAt: Date.now() - 1000 * 60 * 60 * 18,
-      },
-      peer: {
-        uid: 'peer-uid-001',
-        displayName: '想轉品牌設計的ian',
-        summary: '文組背景，正在轉職 UI / 品牌設計，自學 Figma 兩個月，靠接小案子建立作品集',
-      },
-      bullets: ['先找練習案子再考隨班課程，省時省錢', 'Behance 比 IG 更能被設計公司看到', '跨域補助和實習可以同期進行'],
-    },
-    {
-      thread: {
-        tid: 'peer-tid-002',
-        type: 'user_user',
-        initiatorId: `user:${MOCK_PERSONA.uid}`,
-        responderId: 'user:peer-uid-002',
-        status: 'matched',
-        matchScore: 84,
-        summary: 'Persona agent 與包裝設計取向的 peer 對話紀錄。',
-        userPresence: 'agent',
-        govPresence: 'agent',
-        peerPresence: 'agent',
-        createdAt: Date.now() - 1000 * 60 * 60 * 72,
-        updatedAt: Date.now() - 1000 * 60 * 60 * 70,
-      },
-      peer: {
-        uid: 'peer-uid-002',
-        displayName: '文組轉設計的karina',
-        summary: '廣告文案背景，目前在台北市設計培訓課，對品牌設計有興趣',
-      },
-      bullets: ['培訓課程名額比較到，先前先查', '文字能力是品牌設計的優勢，不用擔心'],
-    },
-  ]
-
-  app.get('/me/peer-threads', (_req, res) => {
-    res.json({ success: true, data: { items: mockPeerThreadItems, total: mockPeerThreadItems.length, hasMore: false } })
-  })
-
-  app.get('/me/peer-threads/:tid/messages', (req, res) => {
-    const msgs = [
-      {
-        mid: `${req.params.tid}-msg-1`,
-        tid: req.params.tid,
-        from: `coffee_agent:${MOCK_PERSONA.uid}`,
-        type: 'query',
-        content: { text: '你們兩個都是文組背景轉設計，應該有很多可以聊的！' },
-        createdAt: Date.now() - 1000 * 60 * 60 * 19,
-      },
-      {
-        mid: `${req.params.tid}-msg-2`,
-        tid: req.params.tid,
-        from: 'coffee_agent:peer',
-        type: 'answer',
-        content: { text: '對，我也覺得！你現在在學哪些設計工具呢？' },
-        createdAt: Date.now() - 1000 * 60 * 60 * 18,
-      },
-    ]
-    res.json({ success: true, data: { items: msgs, total: msgs.length, hasMore: false } })
-  })
-
-  app.post('/threads/:tid/message', (req, res) => {
-    const msg: ThreadMessage = {
-      mid: `msg-${Date.now()}`,
-      tid: req.params.tid,
-      from: `human:${MOCK_PERSONA.uid}`,
-      type: 'human_note',
-      content: { text: req.body?.content ?? '' },
-      createdAt: Date.now(),
-    }
-    res.json({ success: true, data: msg })
-  })
-
-  app.post('/threads/:tid/join', (req, res) => {
-    const thread = mockThreads.find(t => t.tid === req.params.tid)
-    if (thread) thread.userPresence = 'human'
-    res.json({ success: true, data: thread ?? MOCK_THREAD })
-  })
-
-  app.get('/human-threads/:tid/messages', (_req, res) => {
-    res.json({ success: true, data: { items: [], hasMore: false } })
-  })
-
-  // -------------------------------------------------------------------------
-  // Gov — Resources
+  // Gov — Resources & Threads
   // -------------------------------------------------------------------------
 
   app.get('/gov/resources', (_req, res) => {
@@ -347,34 +307,8 @@ export function createMockApp(): Express {
     res.json({ success: true, data: { items: mockThreads, total: mockThreads.length, hasMore: false } })
   })
 
-  app.get('/gov/dashboard', (_req, res) => {
-    res.json({
-      success: true,
-      data: {
-        totalReplies: 12,
-        avgMatchScore: 78.5,
-        openedConversations: 3,
-        openRate: 0.25,
-        scoreDistribution: { '90-100': 2, '70-89': 7, '50-69': 2, '0-49': 1 },
-      },
-    })
-  })
-
   app.get('/gov/human-threads', (_req, res) => {
     res.json({ success: true, data: { items: [], hasMore: false } })
-  })
-
-  // -------------------------------------------------------------------------
-  // Gov — Resources
-  // -------------------------------------------------------------------------
-
-  app.get('/gov/resources', (_req, res) => {
-    res.json({ success: true, data: { items: [MOCK_RESOURCE] } })
-  })
-
-  app.post('/gov/resources', (req, res) => {
-    const resource = { ...MOCK_RESOURCE, rid: `rid-${Date.now()}`, ...req.body, createdAt: msToTimestamp(Date.now()) }
-    res.status(201).json({ success: true, data: resource })
   })
 
   return app
@@ -393,7 +327,6 @@ export function startMockServer(port = 3001) {
         const msg = JSON.parse(raw.toString())
 
         if (msg.type === 'persona_message') {
-          // Simulate streaming PersonaAgent reply
           const reply: ServerEvent = { type: 'agent_reply', content: '我好想你...', done: false }
           socket.send(JSON.stringify(reply))
           setTimeout(() => {

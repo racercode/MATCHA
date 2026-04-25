@@ -1,5 +1,5 @@
 ---
-name: read_channel
+name: read-channel
 description: Read recent channel messages from the central channel
 ---
 

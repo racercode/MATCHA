@@ -14,7 +14,7 @@ import type { GovernmentResource } from '@matcha/shared-types'
 async function main() {
   console.log('=== MATCHA Gov Agent Pipeline (Phase 1) ===\n')
 
-  const { messages } = readChannelToolWrapper()
+  const { messages } = await readChannelToolWrapper()
   console.log(`[read_channel] ${messages.length} channel messages loaded`)
 
   console.log(`[Gov Agent] ${fakeGovernmentResources.length} resource agents will be initialized`)

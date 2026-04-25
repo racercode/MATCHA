@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
-import { govStaff } from '../lib/store.js'
+import { auth, db } from '../lib/firebase.js'
 
 export interface AuthedRequest extends Request {
   uid: string
@@ -7,32 +7,37 @@ export interface AuthedRequest extends Request {
   govId?: string
 }
 
-// Token = raw uid string (no Firebase verification)
-export function verifyToken(req: Request, res: Response, next: NextFunction) {
+export async function verifyToken(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization
   if (!header?.startsWith('Bearer ')) {
     res.status(401).json({ success: false, error: '未提供 token', data: null })
     return
   }
 
-  const uid = header.slice(7).trim()
-  if (!uid) {
+  const idToken = header.slice(7).trim()
+  if (!idToken) {
     res.status(401).json({ success: false, error: 'token 無效', data: null })
     return
   }
 
-  const authed = req as AuthedRequest
-  authed.uid = uid
+  try {
+    const decoded = await auth.verifyIdToken(idToken)
+    const uid = decoded.uid
+    const authed = req as AuthedRequest
+    authed.uid = uid
 
-  const staff = govStaff.get(uid)
-  if (staff) {
-    authed.role = 'gov_staff'
-    authed.govId = staff.govId
-  } else {
-    authed.role = 'citizen'
+    const staffDoc = await db.collection('gov_staff').doc(uid).get()
+    if (staffDoc.exists) {
+      authed.role = 'gov_staff'
+      authed.govId = staffDoc.data()!.govId as string
+    } else {
+      authed.role = 'citizen'
+    }
+
+    next()
+  } catch {
+    res.status(401).json({ success: false, error: 'token 驗證失敗', data: null })
   }
-
-  next()
 }
 
 export function requireGovStaff(req: Request, res: Response, next: NextFunction) {

@@ -1,5 +1,5 @@
 ---
-name: query_resource_pdf
+name: query-resource-pdf
 description: Query the PDF/resource document bound to this resource agent
 ---
 

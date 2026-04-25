@@ -1,107 +1,139 @@
 import { Router, type Router as IRouter } from 'express'
 import { verifyToken, type AuthedRequest } from '../middleware/auth.js'
-import {
-  personas,
-  channelReplies,
-  channelMessages,
-  peerThreads,
-  humanThreads,
-  getGovName,
-  getCitizenInfo,
-} from '../lib/store.js'
+import { db } from '../lib/firebase.js'
 
 const router: IRouter = Router()
 router.use(verifyToken)
 
 // GET /me/persona
-router.get('/me/persona', (req, res) => {
+router.get('/me/persona', async (req, res) => {
   const { uid } = req as AuthedRequest
-  const persona = personas.get(uid) ?? null
-  res.json({ success: true, data: persona })
+  const doc = await db.collection('personas').doc(uid).get()
+  res.json({ success: true, data: doc.exists ? { uid, ...doc.data() } : null })
 })
 
 // GET /me/channel-replies — poll for GovAgent match replies
-router.get('/me/channel-replies', (req, res) => {
+router.get('/me/channel-replies', async (req, res) => {
   const { uid } = req as AuthedRequest
   const since = Number(req.query.since) || 0
   const limit = Math.min(Number(req.query.limit) || 20, 100)
 
-  // Collect all msgIds that belong to this user
-  const myMsgIds = new Set<string>()
-  for (const msg of channelMessages.values()) {
-    if (msg.uid === uid) myMsgIds.add(msg.msgId)
+  const msgsSnap = await db.collection('channel_messages').where('uid', '==', uid).get()
+  const myMsgIds = new Set(msgsSnap.docs.map(d => d.id))
+  if (myMsgIds.size === 0) {
+    res.json({ success: true, data: { items: [], hasMore: false } })
+    return
   }
 
-  const items = []
-  for (const reply of channelReplies.values()) {
-    if (!myMsgIds.has(reply.messageId)) continue
-    if (reply.createdAt <= since) continue
-    items.push({
-      replyId: reply.replyId,
-      messageId: reply.messageId,
-      govId: reply.govId,
-      govName: getGovName(reply.govId),
-      content: reply.content,
-      matchScore: reply.matchScore,
-      createdAt: reply.createdAt,
-    })
-  }
+  type ReplyDoc = { replyId: string; messageId: string; govId: string; content: string; matchScore: number; createdAt: number }
+  const repliesSnap = await db.collection('channel_replies').get()
+  const filtered: ReplyDoc[] = repliesSnap.docs
+    .map(d => ({ replyId: d.id, ...(d.data() as Omit<ReplyDoc, 'replyId'>) }))
+    .filter(r => myMsgIds.has(r.messageId) && r.createdAt > since)
 
-  items.sort((a, b) => b.createdAt - a.createdAt)
+  const govIds = [...new Set(filtered.map(r => r.govId as string))]
+  const govNames = new Map<string, string>()
+  await Promise.all(govIds.map(async gid => {
+    const doc = await db.collection('gov_resources').doc(gid).get()
+    govNames.set(gid, doc.exists ? (doc.data()!.name as string) : gid)
+  }))
+
+  const items = filtered
+    .map(r => ({
+      replyId: r.replyId,
+      messageId: r.messageId,
+      govId: r.govId,
+      govName: govNames.get(r.govId) ?? r.govId,
+      content: r.content,
+      matchScore: r.matchScore,
+      createdAt: r.createdAt,
+    }))
+    .sort((a, b) => b.createdAt - a.createdAt)
+
   res.json({ success: true, data: { items: items.slice(0, limit), hasMore: items.length > limit } })
 })
 
 // GET /me/peer-threads — poll for CoffeeAgent peer matches
-router.get('/me/peer-threads', (req, res) => {
+router.get('/me/peer-threads', async (req, res) => {
   const { uid } = req as AuthedRequest
   const since = Number(req.query.since) || 0
   const limit = Math.min(Number(req.query.limit) || 20, 100)
 
-  const items = []
-  for (const thread of peerThreads.values()) {
-    if (thread.userAId !== uid && thread.userBId !== uid) continue
-    if (thread.updatedAt <= since) continue
+  const [snapA, snapB] = await Promise.all([
+    db.collection('peer_threads').where('userAId', '==', uid).get(),
+    db.collection('peer_threads').where('userBId', '==', uid).get(),
+  ])
 
-    const peerUid = thread.userAId === uid ? thread.userBId : thread.userAId
-    items.push({
-      tid: thread.tid,
-      type: thread.type,
-      peer: getCitizenInfo(peerUid),
-      matchRationale: thread.matchRationale,
-      status: thread.status,
-      createdAt: thread.createdAt,
-      updatedAt: thread.updatedAt,
-    })
+  type PeerThreadDoc = { tid: string; type: string; userAId: string; userBId: string; matchRationale: string; status: string; createdAt: number; updatedAt: number }
+  const seen = new Set<string>()
+  const threads: PeerThreadDoc[] = []
+  for (const doc of [...snapA.docs, ...snapB.docs]) {
+    if (seen.has(doc.id)) continue
+    seen.add(doc.id)
+    const data = doc.data() as Omit<PeerThreadDoc, 'tid'>
+    if (data.updatedAt <= since) continue
+    threads.push({ tid: doc.id, ...data })
   }
 
-  items.sort((a, b) => b.updatedAt - a.updatedAt)
+  const peerUids = [...new Set(threads.map(t => (t.userAId === uid ? t.userBId : t.userAId)))]
+  const peerPersonas = new Map<string, { displayName: string; summary: string }>()
+  await Promise.all(peerUids.map(async peerUid => {
+    const doc = await db.collection('personas').doc(peerUid).get()
+    if (doc.exists) {
+      peerPersonas.set(peerUid, { displayName: doc.data()!.displayName as string, summary: doc.data()!.summary as string })
+    }
+  }))
+
+  const items = threads.map(t => {
+    const peerUid = t.userAId === uid ? t.userBId : t.userAId
+    const peer = peerPersonas.get(peerUid)
+    return {
+      tid: t.tid,
+      type: t.type,
+      peer: { uid: peerUid, displayName: peer?.displayName ?? peerUid, summary: peer?.summary ?? '' },
+      matchRationale: t.matchRationale,
+      status: t.status,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+    }
+  }).sort((a, b) => b.updatedAt - a.updatedAt)
+
   res.json({ success: true, data: { items: items.slice(0, limit), hasMore: items.length > limit } })
 })
 
 // GET /me/human-threads — poll for gov-opened human threads
-router.get('/me/human-threads', (req, res) => {
+router.get('/me/human-threads', async (req, res) => {
   const { uid } = req as AuthedRequest
   const since = Number(req.query.since) || 0
   const limit = Math.min(Number(req.query.limit) || 20, 100)
 
-  const items = []
-  for (const thread of humanThreads.values()) {
-    if (thread.userId !== uid) continue
-    if (thread.updatedAt <= since) continue
-    items.push({
-      tid: thread.tid,
-      type: thread.type,
-      govId: thread.govId,
-      govName: getGovName(thread.govId),
-      channelReplyId: thread.channelReplyId,
-      matchScore: thread.matchScore,
-      status: thread.status,
-      createdAt: thread.createdAt,
-      updatedAt: thread.updatedAt,
-    })
-  }
+  type ThreadDoc = { tid: string; type: string; govId: string; channelReplyId: string; matchScore: number; status: string; createdAt: number; updatedAt: number }
+  const snap = await db.collection('human_threads').where('userId', '==', uid).get()
+  const threads: ThreadDoc[] = snap.docs
+    .map(d => ({ tid: d.id, ...(d.data() as Omit<ThreadDoc, 'tid'>) }))
+    .filter(t => t.updatedAt > since)
 
-  items.sort((a, b) => b.updatedAt - a.updatedAt)
+  const govIds = [...new Set(threads.map(t => t.govId as string))]
+  const govNames = new Map<string, string>()
+  await Promise.all(govIds.map(async gid => {
+    const doc = await db.collection('gov_resources').doc(gid).get()
+    govNames.set(gid, doc.exists ? (doc.data()!.name as string) : gid)
+  }))
+
+  const items = threads
+    .map(t => ({
+      tid: t.tid,
+      type: t.type,
+      govId: t.govId,
+      govName: govNames.get(t.govId) ?? t.govId,
+      channelReplyId: t.channelReplyId,
+      matchScore: t.matchScore,
+      status: t.status,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+    }))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+
   res.json({ success: true, data: { items: items.slice(0, limit), hasMore: items.length > limit } })
 })
 

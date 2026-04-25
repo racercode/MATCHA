@@ -1,25 +1,27 @@
-import { personas } from '../../lib/store.js'
-import { broadcast } from '../../ws/push.js'
-import type { UserPersona } from '@matcha/shared-types'
+import { db } from '../../../lib/firebase.js'
+import type { UserPersona } from '../../../lib/store.js'
 import type { UpdatePersonaInput } from '../types.js'
 
-export function updatePersonaToolWrapper(
+export async function updatePersonaToolWrapper(
   uid: string,
   input: UpdatePersonaInput,
   displayName?: string,
-): UserPersona {
-  const existing = personas.get(uid)
+): Promise<UserPersona> {
+  const existing = await db.collection('personas').doc(uid).get()
   const updated: UserPersona = {
     uid,
-    displayName: existing?.displayName ?? displayName ?? uid,
+    displayName: (existing.exists ? (existing.data()!.displayName as string) : null) ?? displayName ?? uid,
     summary: input.summary,
     needs: input.needs,
     offers: input.offers,
     updatedAt: Date.now(),
   }
-
-  personas.set(uid, updated)
-  broadcast(uid, { type: 'persona_updated', persona: updated })
-
+  await db.collection('personas').doc(uid).set({
+    displayName: updated.displayName,
+    summary: updated.summary,
+    needs: updated.needs,
+    offers: updated.offers,
+    updatedAt: updated.updatedAt,
+  })
   return updated
 }

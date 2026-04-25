@@ -1,3 +1,8 @@
+---
+name: escalate-to-caseworker
+description: Escalate a match to a human government caseworker when the case requires human judgment, missing eligibility information, or policy-specific questions that must not be guessed.
+---
+
 # escalate_to_caseworker
 
 Use this skill when the match requires human judgment from a government caseworker.
