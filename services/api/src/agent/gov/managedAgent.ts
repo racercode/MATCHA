@@ -12,14 +12,14 @@ import {
 } from '../general/agentRegistry.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: path.resolve(__dirname, '../../../../../.env') })
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') })
 
 if (!globalThis.File) {
   globalThis.File = File as unknown as typeof globalThis.File
 }
 
 const GOV_AGENT_MODEL = 'claude-haiku-4-5'
-const GOV_AGENT_CONFIG_VERSION = 'gov-channel-reply-tools-v1'
+const GOV_AGENT_CONFIG_VERSION = 'gov-backend-persist-channel-reply-v1'
 const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 const DEFAULT_AGENCY_NAME = '臺北市青年局'
 const DEFAULT_SESSION_KEY = 'default'
@@ -38,17 +38,20 @@ const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
 2. 如果資格條件缺少關鍵資訊，請填入 missingInfo。
 3. score 必須是 0 到 100 的整數。
 4. 只有明顯值得主動推薦時 eligible 才能是 true。
-5. 需要資料時，自己呼叫 read_channel、query_resource_pdf、write_channel_reply custom tools。
+5. 需要資料時，自己呼叫 read_channel、query_resource_pdf custom tools。
 6. query_resource_pdf 只會回傳你這個 resource agent 被授權看到的單一政府資源。
 7. 不要嘗試查詢或媒合其他 resourceId。
 8. 如果不需要回應，最後只回傳 null。
-9. 如果需要回應，請先呼叫 write_channel_reply，最後只回傳 write_channel_reply 的結果 JSON。
-10. 最終回應只能是 JSON 或 null，不要使用 markdown，不要加解釋文字。
+9. 如果需要回應，最後只回傳 MatchDecision JSON；後端 pipeline 會負責建立並寫入 ChannelReply。
+10. 不要呼叫任何寫入資料庫的工具。
+11. 最終回應只能是 JSON 或 null，不要使用 markdown，不要加解釋文字。
 
 回應 JSON 格式：
 {
-  "respond": true,
-  "reply": {}
+  "eligible": true,
+  "score": 0,
+  "reason": "推薦理由",
+  "missingInfo": []
 }`
 
 const GOV_CUSTOM_TOOLS = [
@@ -73,37 +76,6 @@ const GOV_CUSTOM_TOOLS = [
       properties: {
         includeDetails: { type: 'boolean', description: 'Optional. Return full resource details when available.' },
       },
-    },
-  },
-  {
-    name: 'write_channel_reply',
-    type: 'custom' as const,
-    description: 'Write a ChannelReply after deciding the bound government resource should respond to a channel message.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        assessment: {
-          type: 'object',
-          description: 'MatchAssessment containing channelMessage, resource, and decision.',
-          properties: {
-            channelMessage: { type: 'object', description: 'The ChannelMessage being evaluated.' },
-            resource: { type: 'object', description: 'The GovernmentResource being matched.' },
-            decision: {
-              type: 'object',
-              description: 'MatchDecision with the evaluation result.',
-              properties: {
-                eligible: { type: 'boolean', description: 'Whether the user is eligible for this resource.' },
-                score: { type: 'number', description: 'Match score from 0 to 100.' },
-                reason: { type: 'string', description: 'Why this match is or is not suitable.' },
-                missingInfo: { type: 'array', items: { type: 'string' }, description: 'Information still needed from the user.' },
-              },
-              required: ['eligible', 'score', 'reason', 'missingInfo'],
-            },
-          },
-          required: ['channelMessage', 'resource', 'decision'],
-        },
-      },
-      required: ['assessment'],
     },
   },
 ]
@@ -141,7 +113,6 @@ async function createGovSkills(): Promise<string[]> {
   return Promise.all([
     createGovSkill('read_channel', existing),
     createGovSkill('query_resource_pdf', existing),
-    createGovSkill('write_channel_reply', existing),
   ])
 }
 

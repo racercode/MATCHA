@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { toMs } from '@matcha/shared-types'
 import { parseMatchDecision } from './pipeline.js'
@@ -150,6 +150,7 @@ describe('queryResourcePdfToolWrapper', () => {
 // ---------------------------------------------------------------------------
 
 describe('writeChannelReplyToolWrapper', () => {
+  const originalFirebasePrivateKey = process.env.FIREBASE_PRIVATE_KEY
   const mockDecision: MatchDecision = {
     eligible: true,
     score: 90,
@@ -157,14 +158,24 @@ describe('writeChannelReplyToolWrapper', () => {
     missingInfo: [],
   }
 
-  it('creates a channel reply with correct shape', () => {
+  before(() => {
+    delete process.env.FIREBASE_PRIVATE_KEY
+  })
+
+  after(() => {
+    if (originalFirebasePrivateKey) {
+      process.env.FIREBASE_PRIVATE_KEY = originalFirebasePrivateKey
+    }
+  })
+
+  it('creates a channel reply with correct shape', async () => {
     const assessment: MatchAssessment = {
       channelMessage: fakeChannelMessages[0],
       resource: fakeGovernmentResources[1],
       decision: mockDecision,
     }
 
-    const { reply } = writeChannelReplyToolWrapper({ assessment })
+    const { reply } = await writeChannelReplyToolWrapper({ assessment })
 
     assert.equal(reply.messageId, fakeChannelMessages[0].msgId)
     assert.equal(reply.govId, fakeGovernmentResources[1].rid)
@@ -173,14 +184,14 @@ describe('writeChannelReplyToolWrapper', () => {
     assert.ok(toMs(reply.createdAt) > 0)
   })
 
-  it('generates deterministic reply id', () => {
+  it('generates deterministic reply id', async () => {
     const assessment: MatchAssessment = {
       channelMessage: fakeChannelMessages[0],
       resource: fakeGovernmentResources[0],
       decision: mockDecision,
     }
 
-    const { reply } = writeChannelReplyToolWrapper({ assessment })
+    const { reply } = await writeChannelReplyToolWrapper({ assessment })
     assert.equal(reply.replyId, 'reply-gov-rid-youth-career-001-msg-channel-xiaoya-001')
   })
 })
