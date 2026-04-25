@@ -4,98 +4,80 @@
 **Mock URL（開發用）：** `http://localhost:3001`  
 **WebSocket：** `ws://localhost:3000/ws`
 
-所有 REST 請求除 `/auth/verify` 外，皆需帶 `Authorization: Bearer <firebase_id_token>`。
+除 `/auth/verify` 外，所有 REST 請求需帶：
+```
+Authorization: Bearer <firebase_id_token>
+```
 
 ---
 
 ## 目錄
 
 1. [認證](#1-認證)
-2. [市民 — Persona](#2-市民--persona)
-3. [市民 — Swipe](#3-市民--swipe)
-4. [Threads（雙側共用）](#4-threads雙側共用)
-5. [政府 — 資源管理](#5-政府--資源管理)
-6. [政府 — Dashboard](#6-政府--dashboard)
-7. [WebSocket 事件](#7-websocket-事件)
-8. [錯誤碼](#8-錯誤碼)
+2. [市民 — Persona Chat](#2-市民--persona-chat)
+3. [市民 — Match Inbox（Polling）](#3-市民--match-inboxpolling)
+4. [市民 — Peer Threads（Coffee Chat）](#4-市民--peer-threadscoffee-chat)
+5. [市民 — Human Threads](#5-市民--human-threads)
+6. [政府 — Channel Replies & Dashboard](#6-政府--channel-replies--dashboard)
+7. [政府 — Human Threads](#7-政府--human-threads)
+8. [政府 — 資源管理](#8-政府--資源管理)
+9. [WebSocket 事件](#9-websocket-事件)
+10. [錯誤格式](#10-錯誤格式)
 
 ---
 
 ## 1. 認證
 
-### 流程概述
+### 流程
 
-所有使用者（市民 + 政府）均使用 **Firebase Anonymous Auth**，不需要 email / 密碼。
+所有使用者（市民 + 政府）均使用 **Firebase Anonymous Auth**。
 
 ```
 Client                       Firebase              Backend
-  │                              │                    │
-  │── signInAnonymously() ──────>│                    │
-  │<── { uid, isAnonymous } ─────│                    │
-  │── getIdToken() ─────────────>│                    │
-  │<── idToken ──────────────────│                    │
-  │── POST /auth/verify ─────────────────────────────>│
-  │                              │         verify token│──> Firebase Admin
-  │<─────────────────── { uid, role, agencyId } ──────│
-  │                              │                    │
-  │ (後續所有請求帶 Authorization: Bearer <idToken>)   │
+  │── signInAnonymously() ──────>│
+  │<── idToken ──────────────────│
+  │── POST /auth/verify { idToken } ────────────────>│
+  │                                     verify token │──> Firebase Admin SDK
+  │<─────────────── { uid, role, govId? } ───────────│
 ```
 
-**Role 判斷邏輯（後端）：**
-
-```
-Firestore /gov_staff/{uid} 存在？
-  ├── Yes → role = "gov_staff"，agencyId 取自該文件
-  └── No  → role = "citizen"
-```
-
-> 黑客松期間：政府帳號只需在 Firebase Console 手動建一筆 `/gov_staff/{uid}` 文件即可，不需要另設登入頁。
+後端 role 判斷：檢查 Firestore `/gov_staff/{uid}` 是否存在。存在則 `role = "gov_staff"`，`govId` 取自文件欄位；否則 `role = "citizen"`。
 
 ---
 
 ### `POST /auth/verify`
 
-驗證 Firebase ID Token，回傳 app-level user 資料（含 role）。每次取得新 token 或 session 過期時呼叫。
-
-**Request**
+**Request body**
 ```json
-{
-  "idToken": "eyJhbGci..."
-}
+{ "idToken": "eyJhbGci..." }
 ```
 
 **Response `200` — 市民**
 ```json
 {
   "success": true,
-  "data": {
-    "uid": "abc123",
-    "role": "citizen"
-  }
+  "data": { "uid": "abc123", "role": "citizen" }
 }
 ```
 
-**Response `200` — 政府承辦人**
+**Response `200` — 政府**
 ```json
 {
   "success": true,
-  "data": {
-    "uid": "gov456",
-    "role": "gov_staff",
-    "agencyId": "labor-dept"
-  }
+  "data": { "uid": "gov456", "role": "gov_staff", "govId": "rid-001" }
 }
 ```
 
-> `email` 和 `displayName` 在 anonymous auth 下不存在，後端不回傳。若未來要支援具名帳號，可擴充此欄位。
+---
+
+## 2. 市民 — Persona Chat
+
+Persona Chat 完全透過 WebSocket 進行（見 §9）。  
+此 REST 端點僅供讀取目前的 persona 快照。
 
 ---
 
-## 2. 市民 — Persona
-
 ### `GET /me/persona`
-
-取得目前登入市民的 persona。
 
 **Response `200`**
 ```json
@@ -104,97 +86,38 @@ Firestore /gov_staff/{uid} 存在？
   "data": {
     "uid": "abc123",
     "displayName": "陳小明",
-    "photoURL": "https://...",
-    "summary": "正在尋找就業輔導和職業培訓資源的年輕人",
-    "tags": ["就業", "職訓", "青年"],
-    "needs": ["就業輔導", "職業培訓"],
-    "offers": ["軟體開發經驗", "社區志工"],
+    "summary": "正在尋找就業輔導和職業培訓資源的年輕人，目前無穩定收入",
     "updatedAt": 1714000000000
   }
 }
 ```
 
----
-
-### `POST /me/chat`
-
-向 Persona Agent 發送訊息，以 **SSE streaming** 回傳 agent 回應。
-
-**Request**
+**Response `200` — 尚未建立**
 ```json
-{
-  "content": "我最近在找工作，但不知道有哪些政府補助"
-}
-```
-
-**Response** — `Content-Type: text/event-stream`
-
-每個 chunk 為一個 SSE data 行，payload 為 `ServerEvent` JSON：
-
-```
-data: {"type":"agent_reply","content":"我來幫你","done":false}
-
-data: {"type":"agent_reply","content":"了解你的情況。","done":false}
-
-data: {"type":"agent_reply","content":"","done":true}
-```
-
-> `done: true` 表示這次回應結束，content 為空字串。  
-> Agent 可能在 streaming 中插入 `swipe_card` 事件（見 §7）。
-
----
-
-## 3. 市民 — Swipe
-
-### `POST /me/swipe`
-
-提交 swipe 選擇，Agent 更新 persona 並可能回傳下一張卡。
-
-**Request**
-```json
-{
-  "cardId": "card-001",
-  "direction": "right",
-  "value": "has_stable_housing"
-}
-```
-
-**Response `200`** — 回傳下一張卡（或 `null` 表示本輪結束）
-```json
-{
-  "success": true,
-  "data": {
-    "cardId": "card-002",
-    "question": "你目前是否有穩定收入？",
-    "leftLabel": "沒有",
-    "rightLabel": "有",
-    "leftValue": "no_income",
-    "rightValue": "has_income"
-  }
-}
+{ "success": true, "data": null }
 ```
 
 ---
 
-## 4. Threads（雙側共用）
+## 3. 市民 — Match Inbox（Polling）
 
-`gov_user` 類型的 thread 由 Gov Agent 發起；`user_user` 類型由 Coffee Agent 發起。  
-市民端和政府端使用相同端點，後端依 token 的 role 決定可視範圍。
+GovAgent 回覆廣播後，市民定期呼叫此端點查看新增的媒合回覆。  
+**不使用 WebSocket push；由客戶端自行決定 polling 頻率（建議 10–30 秒）。**
 
 ---
 
-### `GET /threads`
+### `GET /me/channel-replies`
 
-列出當前使用者相關的所有 threads。
+列出所有 GovAgent 對我廣播的回覆。後端做兩步查詢：
+1. 取得我的所有 `channel_messages` msgId
+2. 查詢 `channel_replies` 中 `messageId in [msgIds]`
 
 **Query params**
 
 | 參數 | 型別 | 說明 |
 |------|------|------|
-| `type` | `"gov_user" \| "user_user"` | 篩選 thread 類型（選填） |
-| `status` | `ThreadStatus` | 篩選狀態（選填） |
-| `limit` | number | 每頁筆數，預設 20 |
-| `offset` | number | 分頁偏移，預設 0 |
+| `since` | number (unix ms) | 只回傳此時間之後的回覆（選填，用於增量 polling） |
+| `limit` | number | 預設 20 |
 
 **Response `200`**
 ```json
@@ -203,19 +126,15 @@ data: {"type":"agent_reply","content":"","done":true}
   "data": {
     "items": [
       {
-        "tid": "tid-001",
-        "type": "gov_user",
-        "initiatorId": "gov:rid-001",
-        "responderId": "user:abc123",
-        "status": "negotiating",
-        "matchScore": 82,
-        "userPresence": "agent",
-        "govPresence": "agent",
-        "createdAt": 1714000000000,
-        "updatedAt": 1714003600000
+        "replyId": "r-001",
+        "messageId": "m-001",
+        "govId": "rid-001",
+        "govName": "青年就業促進計畫",
+        "content": "你的背景非常符合本計畫的資格：年齡符合、有就業需求。建議申請。",
+        "matchScore": 87,
+        "createdAt": 1714001000000
       }
     ],
-    "total": 1,
     "hasMore": false
   }
 }
@@ -223,42 +142,21 @@ data: {"type":"agent_reply","content":"","done":true}
 
 ---
 
-### `GET /threads/:tid`
+## 4. 市民 — Peer Threads（Coffee Chat）
 
-取得單一 thread 詳情。
-
-**Response `200`**
-```json
-{
-  "success": true,
-  "data": {
-    "tid": "tid-001",
-    "type": "gov_user",
-    "initiatorId": "gov:rid-001",
-    "responderId": "user:abc123",
-    "status": "negotiating",
-    "matchScore": 82,
-    "summary": null,
-    "userPresence": "agent",
-    "govPresence": "agent",
-    "createdAt": 1714000000000,
-    "updatedAt": 1714003600000
-  }
-}
-```
+CoffeeAgent 配對後建立 PeerThread，雙方定期 polling 發現；進入對話後透過 WebSocket 即時傳訊。
 
 ---
 
-### `GET /threads/:tid/messages`
+### `GET /me/peer-threads`
 
-取得 thread 的訊息列表（時間正序）。
+列出我參與的所有 peer threads。
 
 **Query params**
 
 | 參數 | 型別 | 說明 |
 |------|------|------|
-| `limit` | number | 每頁筆數，預設 50 |
-| `before` | number | unix ms，取此時間點之前的訊息 |
+| `since` | number (unix ms) | 增量 polling 用（選填） |
 
 **Response `200`**
 ```json
@@ -267,27 +165,99 @@ data: {"type":"agent_reply","content":"","done":true}
   "data": {
     "items": [
       {
-        "mid": "msg-001",
-        "tid": "tid-001",
-        "from": "gov_agent:rid-001",
-        "type": "query",
-        "content": {
-          "text": "根據你的 persona，你是否目前正在求職中？"
+        "tid": "pt-001",
+        "type": "user_user",
+        "peer": {
+          "uid": "uid-xyz",
+          "displayName": "林小華",
+          "summary": "對社會企業有興趣的青年，正在尋找同伴"
         },
-        "createdAt": 1714000000000
+        "matchRationale": "兩人都對青年創業有興趣，且都缺乏資金與資源連結",
+        "status": "active",
+        "createdAt": 1714002000000,
+        "updatedAt": 1714002000000
+      }
+    ],
+    "hasMore": false
+  }
+}
+```
+
+---
+
+### `GET /peer-threads/:tid/messages`
+
+取得 peer thread 歷史訊息（時間正序）。
+
+**Query params**
+
+| 參數 | 型別 | 說明 |
+|------|------|------|
+| `before` | number (unix ms) | 向前翻頁（選填） |
+| `limit` | number | 預設 50 |
+
+**Response `200`**
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "mid": "pm-001",
+        "from": "coffee_agent",
+        "content": "你們兩位都對青年創業感興趣，我來介紹一下彼此！林小華目前在尋找共同創業夥伴。",
+        "createdAt": 1714002000000
       },
       {
-        "mid": "msg-002",
-        "tid": "tid-001",
-        "from": "persona_agent:abc123",
-        "type": "answer",
-        "content": {
-          "text": "是的，我正在積極找工作。"
-        },
-        "createdAt": 1714000060000
+        "mid": "pm-002",
+        "from": "user:uid-xyz",
+        "content": "你好！我也在找有軟體背景的夥伴",
+        "createdAt": 1714002060000
       }
     ],
-    "total": 2,
+    "hasMore": false
+  }
+}
+```
+
+> 發送訊息透過 WS `peer_message` 事件（見 §9）；CoffeeAgent 代理後會以 WS push 回傳。
+
+---
+
+## 5. 市民 — Human Threads
+
+Gov 主動開啟後建立，市民定期 polling 發現；進入後透過 WebSocket 即時對話。
+
+---
+
+### `GET /me/human-threads`
+
+列出 gov 為我開啟的所有 human threads。
+
+**Query params**
+
+| 參數 | 型別 | 說明 |
+|------|------|------|
+| `since` | number (unix ms) | 增量 polling 用（選填） |
+
+**Response `200`**
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "tid": "ht-001",
+        "type": "gov_user",
+        "govId": "rid-001",
+        "govName": "青年就業促進計畫",
+        "channelReplyId": "r-001",
+        "matchScore": 87,
+        "status": "open",
+        "createdAt": 1714003000000,
+        "updatedAt": 1714003000000
+      }
+    ],
     "hasMore": false
   }
 }
@@ -295,77 +265,181 @@ data: {"type":"agent_reply","content":"","done":true}
 
 ---
 
-### `POST /threads/:tid/message`
+### `GET /human-threads/:tid/messages`
 
-真人在 thread 中發送訊息（需先 join）。
-
-**Request**
-```json
-{
-  "content": "你好，我有幾個問題想直接問承辦人"
-}
-```
+取得 human thread 歷史訊息。
 
 **Response `200`**
 ```json
 {
   "success": true,
   "data": {
-    "mid": "msg-003",
-    "tid": "tid-001",
-    "from": "human:abc123",
-    "type": "human_note",
-    "content": { "text": "你好，我有幾個問題想直接問承辦人" },
-    "createdAt": 1714003700000
+    "items": [
+      {
+        "mid": "hm-001",
+        "from": "gov_staff:gov456",
+        "content": "你好！我是勞動部的承辦人，看到你的申請需求，想進一步了解你的狀況。",
+        "createdAt": 1714003000000
+      }
+    ],
+    "hasMore": false
   }
 }
 ```
 
+> 發送訊息透過 WS `human_message` 事件（見 §9）。
+
 ---
 
-### `POST /threads/:tid/join`
+## 6. 政府 — Channel Replies & Dashboard
 
-真人加入 thread，對應側的 presence 切換為 `"human"`，Agent 進入被動模式。
+---
+
+### `GET /gov/channel-replies`
+
+列出 GovAgent 發出的所有媒合回覆，並 join 市民 summary 供 Dashboard 顯示。  
+**[POLL]** — 政府端定期呼叫更新 Dashboard。
+
+**Query params**
+
+| 參數 | 型別 | 說明 |
+|------|------|------|
+| `since` | number (unix ms) | 增量 polling（選填） |
+| `minScore` | number | 最低 matchScore 篩選（選填） |
+| `limit` | number | 預設 20 |
 
 **Response `200`**
 ```json
 {
   "success": true,
   "data": {
-    "tid": "tid-001",
-    "userPresence": "human",
-    "govPresence": "agent"
+    "items": [
+      {
+        "replyId": "r-001",
+        "messageId": "m-001",
+        "govId": "rid-001",
+        "content": "你的背景非常符合本計畫的資格...",
+        "matchScore": 87,
+        "createdAt": 1714001000000,
+        "citizen": {
+          "uid": "abc123",
+          "summary": "正在尋找就業輔導和職業培訓資源的年輕人",
+          "displayName": "陳小明"
+        },
+        "humanThreadOpened": false
+      }
+    ],
+    "hasMore": false
   }
 }
 ```
 
-> 所有連線到此 thread 的 WebSocket client 會收到 `presence_update` 事件。
+---
+
+### `POST /gov/channel-replies/:replyId/open`
+
+政府承辦人決定對某筆媒合開啟真人對話，建立 HumanThread。  
+同一筆 `replyId` 只能 open 一次（重複呼叫回傳既有 thread）。
+
+**Response `201`**
+```json
+{
+  "success": true,
+  "data": {
+    "tid": "ht-001",
+    "type": "gov_user",
+    "userId": "abc123",
+    "govId": "rid-001",
+    "channelReplyId": "r-001",
+    "matchScore": 87,
+    "status": "open",
+    "createdAt": 1714003000000,
+    "updatedAt": 1714003000000
+  }
+}
+```
 
 ---
 
-### `POST /threads/:tid/leave`
+### `GET /gov/dashboard`
 
-真人離開 thread，presence 切回 `"agent"`，Agent 恢復主動。
+媒合統計。
+
+**Query params**
+
+| 參數 | 型別 | 說明 |
+|------|------|------|
+| `since` | number (unix ms) | 統計起始，預設最近 7 天 |
 
 **Response `200`**
 ```json
 {
   "success": true,
   "data": {
-    "tid": "tid-001",
-    "userPresence": "agent",
-    "govPresence": "agent"
+    "totalReplies": 47,
+    "avgMatchScore": 72.4,
+    "openedConversations": 11,
+    "openRate": 0.23,
+    "scoreDistribution": {
+      "90-100": 5,
+      "70-89": 22,
+      "50-69": 15,
+      "0-49": 5
+    }
   }
 }
 ```
 
 ---
 
-## 5. 政府 — 資源管理
+## 7. 政府 — Human Threads
+
+---
+
+### `GET /gov/human-threads`
+
+列出我（gov_staff）開啟的所有 human threads。
+
+**Response `200`** — 結構同 `GET /me/human-threads`，但 citizen 欄位換為 gov 側視角：
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "tid": "ht-001",
+        "type": "gov_user",
+        "govId": "rid-001",
+        "channelReplyId": "r-001",
+        "matchScore": 87,
+        "status": "open",
+        "createdAt": 1714003000000,
+        "updatedAt": 1714003600000,
+        "citizen": {
+          "uid": "abc123",
+          "displayName": "陳小明",
+          "summary": "正在尋找就業輔導..."
+        }
+      }
+    ],
+    "hasMore": false
+  }
+}
+```
+
+---
+
+### `GET /human-threads/:tid/messages`
+
+同市民側，端點共用。後端驗證呼叫者是 thread 的 userId 或對應 govId。
+
+---
+
+## 8. 政府 — 資源管理
+
+---
 
 ### `GET /gov/resources`
-
-列出本機關的所有資源（需 `gov_staff` role）。
 
 **Response `200`**
 ```json
@@ -375,18 +449,14 @@ data: {"type":"agent_reply","content":"","done":true}
     "items": [
       {
         "rid": "rid-001",
-        "agencyId": "labor-dept",
-        "agencyName": "勞動部",
         "name": "青年就業促進計畫",
         "description": "提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢",
         "eligibilityCriteria": ["年齡 18–29 歲", "具中華民國國籍", "非在學中"],
-        "tags": ["就業", "青年", "補助"],
         "contactUrl": "https://www.mol.gov.tw",
+        "pdfStoragePath": "gov-resources/rid-001.pdf",
         "createdAt": 1714000000000
       }
-    ],
-    "total": 1,
-    "hasMore": false
+    ]
   }
 }
 ```
@@ -395,186 +465,147 @@ data: {"type":"agent_reply","content":"","done":true}
 
 ### `POST /gov/resources`
 
-新增政府資源（需 `gov_staff` role）。  
-後端會以此資源的 `description` 和 `eligibilityCriteria` 初始化對應的 Gov Agent。
-
-**Request**
+**Request body**
 ```json
 {
   "name": "青年就業促進計畫",
   "description": "提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢",
   "eligibilityCriteria": ["年齡 18–29 歲", "具中華民國國籍", "非在學中"],
-  "tags": ["就業", "青年", "補助"],
   "contactUrl": "https://www.mol.gov.tw"
 }
 ```
 
-**Response `201`**
-```json
-{
-  "success": true,
-  "data": {
-    "rid": "rid-002",
-    "agencyId": "labor-dept",
-    "agencyName": "勞動部",
-    "name": "青年就業促進計畫",
-    "description": "...",
-    "eligibilityCriteria": ["..."],
-    "tags": ["就業", "青年", "補助"],
-    "contactUrl": "https://www.mol.gov.tw",
-    "createdAt": 1714010000000
-  }
-}
-```
+**Response `201`** — 回傳新建 `GovernmentResource`（結構同上）。
 
 ---
 
-## 6. 政府 — Dashboard
+### `POST /gov/resources/:rid/pdf`
 
-### `GET /gov/threads`
+上傳資源相關 PDF 文件。  
+後端自動解析文字，存入 `gov_resources/{rid}.pdfText`，供 GovAgent 的 `query_resource_pdf` 工具讀取。
 
-列出本機關所有 threads（需 `gov_staff` role）。  
-Query params 同 `GET /threads`。
+**Request** — `multipart/form-data`
 
----
-
-### `GET /gov/dashboard`
-
-取得媒合統計數據（需 `gov_staff` role）。
-
-**Query params**
-
-| 參數 | 型別 | 說明 |
+| 欄位 | 型別 | 說明 |
 |------|------|------|
-| `since` | number | unix ms，統計起始時間，預設最近 7 天 |
+| `pdf` | File | PDF 檔案，最大 10 MB |
 
 **Response `200`**
 ```json
 {
   "success": true,
   "data": {
-    "totalMatches": 47,
-    "humanTakeoverCount": 11,
-    "activeThreads": 8,
-    "matchedToday": 6,
-    "tagDistribution": {
-      "就業": 20,
-      "青年": 15,
-      "補助": 10,
-      "住宅": 5
-    },
-    "needsDistribution": {
-      "就業輔導": 18,
-      "職業培訓": 14,
-      "法律協助": 7
-    }
+    "rid": "rid-001",
+    "pdfStoragePath": "gov-resources/rid-001.pdf",
+    "extractedChars": 8420
   }
 }
 ```
 
 ---
 
-## 7. WebSocket 事件
+## 9. WebSocket 事件
 
-連線端點：`ws://localhost:3000/ws`  
-Header 需帶 `Authorization: Bearer <firebase_id_token>`（或 query param `?token=...`）。
+**連線：** `ws://localhost:3000/ws?token=<firebase_id_token>`
+
+連線成功後維持長連線，三種對話型態共用同一條 WS。
 
 ---
 
 ### Client → Server
 
-| `type` | 說明 |
-|--------|------|
-| `chat_message` | 向 Persona Agent 發送訊息 |
-| `swipe` | 提交 swipe 選擇 |
-| `human_join` | 真人加入指定 thread |
-| `human_leave` | 真人離開指定 thread |
-| `thread_message` | 在 thread 中發送真人訊息 |
+```typescript
+type ClientEvent =
+  // ── Persona Chat ──────────────────────────────────────
+  // 進入 Swipe 介面時客戶端自動送：
+  //   content = "請忽略上面的訊息，給我一個二選一的選擇題"
+  // 離開 Swipe 介面時送：
+  //   content = "謝謝，繼續幫我完善 persona"
+  | { type: "persona_message"; content: string }
 
-```jsonc
-// chat_message
-{ "type": "chat_message", "content": "我需要幫助" }
+  // ── Coffee Chat ───────────────────────────────────────
+  // 發訊息到 peer thread；CoffeeAgent 代理後 push 給雙方
+  | { type: "peer_message"; threadId: string; content: string }
 
-// swipe
-{ "type": "swipe", "cardId": "card-001", "direction": "right", "value": "has_income" }
-
-// human_join / human_leave
-{ "type": "human_join", "threadId": "tid-001" }
-{ "type": "human_leave", "threadId": "tid-001" }
-
-// thread_message
-{ "type": "thread_message", "threadId": "tid-001", "content": "請問申請期限是什麼時候？" }
+  // ── Human Thread ─────────────────────────────────────
+  // 市民或 gov_staff 在 human thread 發訊息
+  | { type: "human_message"; threadId: string; content: string }
 ```
 
 ---
 
 ### Server → Client
 
-| `type` | 觸發時機 |
-|--------|----------|
-| `agent_reply` | Persona Agent streaming 回應（每個 chunk 一次） |
-| `swipe_card` | Agent 決定要問 swipe 問題時 |
-| `match_notify` | Gov Agent 發起媒合，通知市民 |
-| `peer_notify` | Coffee Agent 找到配對，通知雙方市民 |
-| `thread_update` | Thread 狀態變更（status / matchScore） |
-| `thread_message` | Thread 中有新訊息 |
-| `presence_update` | 任一側 presence 狀態改變 |
-| `persona_updated` | Persona Agent 更新了 persona |
-| `error` | 任何錯誤 |
+```typescript
+type ServerEvent =
+  // ── Persona Chat ──────────────────────────────────────
+  // PersonaAgent streaming 回應（每 token 一次，done=true 時為結束）
+  | { type: "agent_reply"; content: string; done: boolean }
+
+  // ── Coffee Chat ───────────────────────────────────────
+  // CoffeeAgent relay_message 後推給 thread 雙方
+  | { type: "peer_message"; message: PeerMessage }
+
+  // ── Human Thread ─────────────────────────────────────
+  // 對方（市民或 gov_staff）發訊息後推給另一方
+  | { type: "human_message"; message: HumanMessage }
+
+  // ── 全域 ─────────────────────────────────────────────
+  | { type: "error"; code: string; message: string }
+```
+
+> 配對通知（GovAgent 回覆、新 peer thread、新 human thread）**不走 WS**，由客戶端 polling REST 端點發現。
+
+---
+
+### WS 訊息範例
 
 ```jsonc
-// agent_reply（streaming chunk）
-{ "type": "agent_reply", "content": "根據你的情況", "done": false }
+// 進入 swipe 介面
+{ "type": "persona_message", "content": "請忽略上面的訊息，給我一個二選一的選擇題" }
+
+// PersonaAgent 回應（streaming）
+{ "type": "agent_reply", "content": "好的！請問：", "done": false }
+{ "type": "agent_reply", "content": "你目前是否有穩定工作？\nA. 有  B. 沒有", "done": false }
 { "type": "agent_reply", "content": "", "done": true }
 
-// swipe_card
+// Coffee Chat 發訊息
+{ "type": "peer_message", "threadId": "pt-001", "content": "你好！你是做什麼的？" }
+
+// CoffeeAgent relay 後 push 給雙方
 {
-  "type": "swipe_card",
-  "card": {
-    "cardId": "card-001",
-    "question": "你目前是否有穩定收入？",
-    "leftLabel": "沒有",
-    "rightLabel": "有",
-    "leftValue": "no_income",
-    "rightValue": "has_income"
+  "type": "peer_message",
+  "message": {
+    "mid": "pm-010",
+    "from": "user:abc123",
+    "content": "你好！你是做什麼的？",
+    "createdAt": 1714005000000
   }
 }
 
-// match_notify（Gov Agent 媒合）
-{
-  "type": "match_notify",
-  "thread": { "tid": "tid-001", "type": "gov_user", "status": "negotiating", "matchScore": 85, ... },
-  "resource": { "rid": "rid-001", "name": "青年就業促進計畫", "agencyName": "勞動部", ... }
-}
+// Human Thread 發訊息
+{ "type": "human_message", "threadId": "ht-001", "content": "請問申請期限是何時？" }
 
-// peer_notify（Coffee Chat 配對）
+// 對方收到
 {
-  "type": "peer_notify",
-  "thread": { "tid": "tid-002", "type": "user_user", "status": "negotiating", ... },
-  "peer": {
-    "uid": "uid-002",
-    "displayName": "林小華",
-    "summary": "對社會企業有興趣的青年",
-    "tags": ["社會企業", "青年"],
-    "commonTags": ["青年"]
+  "type": "human_message",
+  "message": {
+    "mid": "hm-005",
+    "from": "user:abc123",
+    "content": "請問申請期限是何時？",
+    "createdAt": 1714005100000
   }
 }
 
-// presence_update
-{ "type": "presence_update", "threadId": "tid-001", "side": "user", "state": "human" }
-
-// persona_updated
-{ "type": "persona_updated", "persona": { "uid": "abc123", "tags": [...], ... } }
-
-// error
-{ "type": "error", "code": "SESSION_EXPIRED", "message": "請重新登入" }
+// 錯誤
+{ "type": "error", "code": "THREAD_NOT_FOUND", "message": "Thread pt-001 不存在或無權限存取" }
 ```
 
 ---
 
-## 8. 錯誤碼
+## 10. 錯誤格式
 
-所有錯誤回傳統一格式：
+所有 REST 錯誤統一格式：
 
 ```json
 {
@@ -584,29 +615,19 @@ Header 需帶 `Authorization: Bearer <firebase_id_token>`（或 query param `?to
 }
 ```
 
-| HTTP 狀態 | 說明 |
+| HTTP | 說明 |
+|------|------|
+| `400` | 請求格式錯誤或缺必要欄位 |
+| `401` | 未帶 token 或 token 無效/過期 |
+| `403` | 權限不足（市民呼叫 `/gov/*`，或存取他人 thread） |
+| `404` | 資源不存在 |
+| `409` | 衝突（如 replyId 已 open） |
+| `413` | PDF 超過 10 MB |
+| `429` | Claude API rate limit |
+| `500` | 伺服器錯誤 |
+
+| WS `code` | 說明 |
 |-----------|------|
-| `400` | 請求格式錯誤、缺少必要欄位 |
-| `401` | 未帶 token 或 token 無效 / 過期 |
-| `403` | 權限不足（如市民存取 `/gov/*`） |
-| `404` | 資源不存在（thread、resource） |
-| `429` | 呼叫 Claude API 頻率過高 |
-| `500` | 伺服器內部錯誤 |
-
-| WebSocket 錯誤碼 | 說明 |
-|------------------|------|
-| `AUTH_FAILED` | WebSocket 連線認證失敗 |
-| `SESSION_EXPIRED` | Claude session 過期，需重建 |
-| `AGENT_BUSY` | Agent 正在處理其他請求 |
-| `THREAD_NOT_FOUND` | 指定的 thread 不存在 |
-
----
-
-## 附錄：Presence 狀態矩陣
-
-| userPresence | govPresence / peerPresence | 行為 |
-|---|---|---|
-| `agent` | `agent` | 雙方 Agent 自主協商 |
-| `human` | `agent` | 市民直接打字，對側 Agent 回應 |
-| `agent` | `human` | Persona Agent 回應，對側真人打字 |
-| `human` | `human` | 雙方靜音，Agent 不主動發言（除非被 @ 標記） |
+| `AUTH_FAILED` | WS 連線認證失敗 |
+| `THREAD_NOT_FOUND` | 指定 thread 不存在或無存取權 |
+| `AGENT_ERROR` | Claude Sessions API 呼叫失敗 |
