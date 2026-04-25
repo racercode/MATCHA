@@ -1,3 +1,15 @@
+export interface Timestamp {
+    seconds: number;
+    nanoseconds: number;
+    toMillis?(): number;
+    toDate?(): Date;
+}
+/** Convert any Timestamp to unix milliseconds */
+export declare const toMs: (ts: Timestamp) => number;
+/** Create a Timestamp from unix milliseconds */
+export declare const msToTimestamp: (ms: number) => Timestamp;
+/** Timestamp for right now */
+export declare const nowTimestamp: () => Timestamp;
 export type UserRole = 'citizen' | 'gov_staff';
 export interface AuthUser {
     uid: string;
@@ -14,7 +26,7 @@ export interface UserPersona {
     summary: string;
     needs: string[];
     offers: string[];
-    updatedAt: number;
+    updatedAt: Timestamp;
 }
 export interface PeerPreview {
     uid: string;
@@ -26,7 +38,7 @@ export interface ChannelMessage {
     msgId: string;
     uid: string;
     summary: string;
-    publishedAt: number;
+    publishedAt: Timestamp;
 }
 export interface GovernmentResource {
     rid: string;
@@ -36,7 +48,7 @@ export interface GovernmentResource {
     description: string;
     eligibilityCriteria: string[];
     contactUrl?: string;
-    createdAt: number;
+    createdAt: Timestamp;
 }
 export type ThreadType = 'gov_user' | 'user_user';
 export type ThreadStatus = 'negotiating' | 'matched' | 'rejected' | 'human_takeover';
@@ -53,8 +65,8 @@ export interface AgentThread {
     govPresence: PresenceState;
     peerPresence?: PresenceState;
     govStaffUid?: string;
-    createdAt: number;
-    updatedAt: number;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
 }
 export type MessageSenderType = `persona_agent:${string}` | `coffee_agent:${string}` | `gov_agent:${string}` | `human:${string}`;
 export type MessageType = 'query' | 'answer' | 'decision' | 'human_note';
@@ -64,7 +76,7 @@ export interface ThreadMessage {
     from: string;
     type: MessageType;
     content: Record<string, unknown>;
-    createdAt: number;
+    createdAt: Timestamp;
 }
 export interface SwipeCard {
     cardId: string;

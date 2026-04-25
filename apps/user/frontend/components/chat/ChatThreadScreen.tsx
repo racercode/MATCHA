@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -12,25 +12,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import type { AgentThread, ThreadMessage, TimestampValue } from '@matcha/shared-types';
-import {
-  Timestamp,
-  addDoc,
-  collection,
-  doc,
-  getDocs,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  writeBatch,
-} from 'firebase/firestore';
+import type { AgentThread, ThreadMessage, Timestamp } from '@matcha/shared-types';
+import { msToTimestamp, toMs } from '@matcha/shared-types';
+import type { ClientEvent, ServerEvent } from '@matcha/shared-types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/containers/hooks/useAuth';
-import { db } from '@/lib/firebase';
+import { WS_URL } from '@/lib/api';
 
 type PostPreviewContent = {
   kind: 'post_preview';
@@ -60,18 +49,18 @@ const buildMockThread = (uid: string): AgentThread => ({
   summary: 'General chat with the persona agent.',
   userPresence: 'human',
   govPresence: 'agent',
-  createdAt: Timestamp.fromMillis(Date.now() - 1000 * 60 * 45),
-  updatedAt: Timestamp.fromMillis(Date.now() - 1000 * 60 * 2),
+  createdAt: msToTimestamp(Date.now() - 1000 * 60 * 45),
+  updatedAt: msToTimestamp(Date.now() - 1000 * 60 * 2),
 });
 
-const buildMockMessages = (threadId: string, uid: string): ThreadMessage[] => [
+const buildSeedMessages = (threadId: string, uid: string): ThreadMessage[] => [
   {
     mid: 'm-001',
     tid: threadId,
     from: 'persona_agent:student-02',
     type: 'answer',
     content: { text: '嗨，我在這裡陪你聊聊。最近最想整理的是哪一件事？' } satisfies TextContent,
-    createdAt: Timestamp.fromMillis(Date.now() - 1000 * 60 * 35),
+    createdAt: msToTimestamp(Date.now() - 1000 * 60 * 35),
   },
   {
     mid: 'm-002',
@@ -79,7 +68,7 @@ const buildMockMessages = (threadId: string, uid: string): ThreadMessage[] => [
     from: `human:${uid}`,
     type: 'query',
     content: { text: '我最近有點焦慮，不知道要先處理學校還是工作。' } satisfies TextContent,
-    createdAt: Timestamp.fromMillis(Date.now() - 1000 * 60 * 28),
+    createdAt: msToTimestamp(Date.now() - 1000 * 60 * 28),
   },
   {
     mid: 'm-003',
@@ -87,62 +76,14 @@ const buildMockMessages = (threadId: string, uid: string): ThreadMessage[] => [
     from: 'persona_agent:student-02',
     type: 'answer',
     content: { text: '可以，我們先拆小一點。現在壓力最大的，是時間不夠，還是方向不清楚？' } satisfies TextContent,
-    createdAt: Timestamp.fromMillis(Date.now() - 1000 * 60 * 27),
-  },
-  {
-    mid: 'm-004',
-    tid: threadId,
-    from: `human:${uid}`,
-    type: 'human_note',
-    content: { text: '比較像是方向不清楚，我不知道先做哪件事最有效。' } satisfies TextContent,
-    createdAt: Timestamp.fromMillis(Date.now() - 1000 * 60 * 24),
-  },
-  {
-    mid: 'm-005',
-    tid: threadId,
-    from: 'persona_agent:student-02',
-    type: 'query',
-    content: { text: '那我們先從你這週一定得完成的事情開始，列 2 到 3 件就好。' } satisfies TextContent,
-    createdAt: Timestamp.fromMillis(Date.now() - 1000 * 60 * 16),
-  },
-  {
-    mid: 'm-006',
-    tid: threadId,
-    from: 'persona_agent:student-02',
-    type: 'answer',
-    content: {
-      kind: 'post_preview',
-      author: 'wife',
-      handle: '@matcha.agent',
-      ageLabel: 'now',
-      text: '先把最重要的一件事情完成，其餘的我們可以一起往後排。',
-      likes: 0,
-      comments: 0,
-      reposts: 0,
-      shares: 0,
-    } satisfies PostPreviewContent,
-    createdAt: Timestamp.fromMillis(Date.now() - 1000 * 60 * 15),
-  },
-  {
-    mid: 'm-007',
-    tid: threadId,
-    from: `human:${uid}`,
-    type: 'human_note',
-    content: { text: '好，那我先整理這週最重要的三件事。' } satisfies TextContent,
-    createdAt: Timestamp.fromMillis(Date.now() - 1000 * 60 * 12),
+    createdAt: msToTimestamp(Date.now() - 1000 * 60 * 27),
   },
 ];
 
 const AGENT_AVATAR = require('@/assets/icons/wife.jpg');
 
-const getTimestampMs = (timestamp: TimestampValue) => {
-  if (typeof timestamp.toMillis === 'function') return timestamp.toMillis();
-  if (typeof timestamp.toDate === 'function') return timestamp.toDate().getTime();
-  return timestamp.seconds * 1000 + Math.floor(timestamp.nanoseconds / 1_000_000);
-};
-
-const formatTimeLabel = (timestamp: TimestampValue) =>
-  new Date(getTimestampMs(timestamp)).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const formatTimeLabel = (createdAt: Timestamp) =>
+  new Date(toMs(createdAt)).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
 const isPostPreview = (content: Record<string, unknown>): content is PostPreviewContent =>
   content.kind === 'post_preview' && typeof content.author === 'string' && typeof content.text === 'string';
@@ -184,6 +125,17 @@ function PostPreviewCard({ content }: { content: PostPreviewContent }) {
   );
 }
 
+function TypingBubble({ text }: { text: string }) {
+  return (
+    <View style={[styles.messageRow, styles.messageRowOther]}>
+      <Image source={AGENT_AVATAR} style={styles.avatar} contentFit="cover" />
+      <View style={[styles.bubble, styles.bubbleOther]}>
+        <ThemedText style={styles.bubbleText}>{text || '…'}</ThemedText>
+      </View>
+    </View>
+  );
+}
+
 function MessageBubble({ message, isOwnMessage }: { message: ThreadMessage; isOwnMessage: boolean }) {
   const content = message.content;
 
@@ -216,11 +168,13 @@ export default function ChatThreadScreen() {
   const params = useLocalSearchParams<{ tid?: string }>();
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [streamingText, setStreamingText] = useState<string | null>(null);
   const listRef = useRef<FlatList<ThreadMessage>>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const streamBufferRef = useRef('');
+
   const currentUserId = user?.uid ?? 'mock-uid-001';
   const threadId = getPersonaThreadId(currentUserId);
-  const thread = useMemo(() => buildMockThread(currentUserId), [currentUserId]);
-  const seedMessages = useMemo(() => buildMockMessages(threadId, currentUserId), [currentUserId, threadId]);
   const routeTid = Array.isArray(params.tid) ? params.tid[0] : params.tid;
 
   const scrollToBottom = (animated = true) => {
@@ -229,6 +183,7 @@ export default function ChatThreadScreen() {
     });
   };
 
+  // Redirect to canonical thread URL if needed
   useEffect(() => {
     if (!user?.uid) return;
     if (routeTid && routeTid !== threadId) {
@@ -236,102 +191,95 @@ export default function ChatThreadScreen() {
     }
   }, [routeTid, threadId, user?.uid]);
 
+  // Initialize messages with seed data
   useEffect(() => {
-    let isMounted = true;
+    setMessages(buildSeedMessages(threadId, currentUserId));
+  }, [currentUserId, threadId]);
 
-    const setupThread = async () => {
-      const threadRef = doc(db, 'threads', threadId);
-      const messagesRef = collection(threadRef, 'messages');
+  // WebSocket connection
+  useEffect(() => {
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
 
-      await setDoc(
-        threadRef,
-        {
-          ...thread,
-          responderId: `user:${currentUserId}`,
-          createdAt: thread.createdAt,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-
-      const existingMessages = await getDocs(query(messagesRef, orderBy('createdAt', 'asc')));
-      if (existingMessages.empty) {
-        const batch = writeBatch(db);
-        for (const message of seedMessages) {
-          const messageRef = doc(messagesRef, message.mid);
-          batch.set(messageRef, message);
-        }
-        await batch.commit();
-      }
-
-      const unsubscribe = onSnapshot(query(messagesRef, orderBy('createdAt', 'asc')), (snapshot) => {
-        if (!isMounted) return;
-
-        const nextMessages = snapshot.docs.map((snapshotDoc) => {
-          const data = snapshotDoc.data();
-          return {
-            mid: snapshotDoc.id,
-            tid: String(data.tid ?? threadId),
-            from: String(data.from ?? ''),
-            type: (data.type ?? 'human_note') as ThreadMessage['type'],
-            content:
-              data.content && typeof data.content === 'object' ? (data.content as Record<string, unknown>) : {},
-            createdAt: data.createdAt instanceof Timestamp ? data.createdAt : Timestamp.now(),
-          } satisfies ThreadMessage;
-        });
-
-        setMessages(nextMessages);
-        scrollToBottom(false);
-      });
-
-      return unsubscribe;
+    ws.onopen = () => {
+      console.log('[Chat] WS connected');
     };
 
-    let teardown: (() => void) | undefined;
-    setupThread()
-      .then((unsubscribe) => {
-        teardown = unsubscribe;
-      })
-      .catch((error) => {
-        console.error('[Chat] 初始化對話失敗', error);
-        if (isMounted) {
-          setMessages(seedMessages);
+    ws.onmessage = (event) => {
+      try {
+        const data: ServerEvent = JSON.parse(event.data);
+
+        if (data.type === 'agent_reply') {
+          if (!data.done) {
+            // Accumulate streaming chunks
+            streamBufferRef.current += data.content;
+            setStreamingText(streamBufferRef.current);
+            scrollToBottom();
+          } else {
+            // Finalize message
+            const finalText = streamBufferRef.current + (data.content ?? '');
+            streamBufferRef.current = '';
+            setStreamingText(null);
+
+            if (finalText.trim()) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  mid: `agent-${Date.now()}`,
+                  tid: threadId,
+                  from: PERSONA_AGENT_ID,
+                  type: 'answer',
+                  content: { text: finalText },
+                  createdAt: msToTimestamp(Date.now()),
+                },
+              ]);
+            }
+            scrollToBottom();
+          }
         }
-      });
+      } catch {
+        // ignore malformed events
+      }
+    };
+
+    ws.onerror = (e) => {
+      console.warn('[Chat] WS error', e);
+    };
+
+    ws.onclose = () => {
+      console.log('[Chat] WS disconnected');
+    };
 
     return () => {
-      isMounted = false;
-      teardown?.();
+      ws.close();
+      wsRef.current = null;
     };
-  }, [currentUserId, seedMessages, thread, threadId]);
+  }, [currentUserId, threadId]);
 
-  const handleSend = async () => {
+  const handleSend = () => {
     const content = draft.trim();
     if (!content) return;
 
     setDraft('');
 
-    try {
-      const threadRef = doc(db, 'threads', threadId);
-      await addDoc(collection(threadRef, 'messages'), {
+    // Add user message to local state
+    setMessages((prev) => [
+      ...prev,
+      {
+        mid: `human-${Date.now()}`,
         tid: threadId,
         from: `human:${currentUserId}`,
         type: 'human_note',
         content: { text: content },
-        createdAt: serverTimestamp(),
-      });
+        createdAt: msToTimestamp(Date.now()),
+      },
+    ]);
+    scrollToBottom();
 
-      await setDoc(
-        threadRef,
-        {
-          responderId: `user:${currentUserId}`,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-    } catch (error) {
-      console.error('[Chat] 傳送訊息失敗', error);
-      setDraft(content);
+    // Send to mock server via WebSocket
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const event: ClientEvent = { type: 'chat_message', content };
+      wsRef.current.send(JSON.stringify(event));
     }
   };
 
@@ -357,7 +305,7 @@ export default function ChatThreadScreen() {
               const previousMessage = index > 0 ? messages[index - 1] : null;
               const showTimestamp =
                 previousMessage == null ||
-                getTimestampMs(item.createdAt) - getTimestampMs(previousMessage.createdAt) > 1000 * 60 * 8;
+                toMs(item.createdAt) - toMs(previousMessage.createdAt) > 1000 * 60 * 8;
               const isOwnMessage = item.from === `human:${currentUserId}`;
 
               return (
@@ -369,6 +317,7 @@ export default function ChatThreadScreen() {
                 </View>
               );
             }}
+            ListFooterComponent={streamingText !== null ? <TypingBubble text={streamingText} /> : null}
           />
 
           <View style={styles.composerBar}>

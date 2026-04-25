@@ -5,6 +5,30 @@
 // =============================================================================
 
 // ---------------------------------------------------------------------------
+// Timestamp  (compatible with Firebase Timestamp and plain JSON objects)
+// ---------------------------------------------------------------------------
+
+export interface Timestamp {
+  seconds: number
+  nanoseconds: number
+  toMillis?(): number
+  toDate?(): Date
+}
+
+/** Convert any Timestamp to unix milliseconds */
+export const toMs = (ts: Timestamp): number =>
+  ts.toMillis?.() ?? ts.seconds * 1000 + Math.floor(ts.nanoseconds / 1_000_000)
+
+/** Create a Timestamp from unix milliseconds */
+export const msToTimestamp = (ms: number): Timestamp => ({
+  seconds: Math.floor(ms / 1000),
+  nanoseconds: (ms % 1000) * 1_000_000,
+})
+
+/** Timestamp for right now */
+export const nowTimestamp = (): Timestamp => msToTimestamp(Date.now())
+
+// ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
@@ -32,7 +56,7 @@ export interface UserPersona {
   summary: string    // agent-maintained natural language summary
   needs: string[]    // what the user is seeking
   offers: string[]   // what the user can share (coffee chat)
-  updatedAt: number  // unix ms
+  updatedAt: Timestamp
 }
 
 // Lightweight peer card shown in coffee chat matching
@@ -51,7 +75,7 @@ export interface ChannelMessage {
   msgId: string
   uid: string
   summary: string
-  publishedAt: number // unix ms
+  publishedAt: Timestamp
 }
 
 // ---------------------------------------------------------------------------
@@ -66,7 +90,7 @@ export interface GovernmentResource {
   description: string
   eligibilityCriteria: string[]
   contactUrl?: string
-  createdAt: number
+  createdAt: Timestamp
 }
 
 // ---------------------------------------------------------------------------
@@ -106,8 +130,8 @@ export interface AgentThread {
   // set when a gov_staff human joins; needed to push WS events to them
   govStaffUid?: string
 
-  createdAt: number
-  updatedAt: number
+  createdAt: Timestamp
+  updatedAt: Timestamp
 }
 
 export type MessageSenderType =
@@ -124,7 +148,7 @@ export interface ThreadMessage {
   from: string       // MessageSenderType pattern
   type: MessageType
   content: Record<string, unknown>
-  createdAt: number
+  createdAt: Timestamp
 }
 
 // ---------------------------------------------------------------------------
@@ -206,7 +230,7 @@ export const MOCK_PERSONA: UserPersona = {
   summary: '正在尋找就業輔導和職業培訓資源的年輕人',
   needs: ['就業輔導', '職業培訓'],
   offers: ['軟體開發經驗', '社區志工'],
-  updatedAt: Date.now(),
+  updatedAt: nowTimestamp(),
 }
 
 export const MOCK_RESOURCE: GovernmentResource = {
@@ -217,7 +241,7 @@ export const MOCK_RESOURCE: GovernmentResource = {
   description: '提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢',
   eligibilityCriteria: ['年齡 18–29 歲', '具中華民國國籍', '非在學中'],
   contactUrl: 'https://www.mol.gov.tw',
-  createdAt: Date.now(),
+  createdAt: nowTimestamp(),
 }
 
 export const MOCK_THREAD: AgentThread = {
@@ -229,8 +253,8 @@ export const MOCK_THREAD: AgentThread = {
   matchScore: 82,
   userPresence: 'agent',
   govPresence: 'agent',
-  createdAt: Date.now() - 60_000,
-  updatedAt: Date.now(),
+  createdAt: msToTimestamp(Date.now() - 60_000),
+  updatedAt: nowTimestamp(),
 }
 
 export const MOCK_PEER_PREVIEW: PeerPreview = {

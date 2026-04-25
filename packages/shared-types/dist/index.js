@@ -5,7 +5,19 @@
 // ALL changes here require notifying all three groups.
 // =============================================================================
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MOCK_PEER_PREVIEW = exports.MOCK_THREAD = exports.MOCK_RESOURCE = exports.MOCK_PERSONA = void 0;
+exports.MOCK_PEER_PREVIEW = exports.MOCK_THREAD = exports.MOCK_RESOURCE = exports.MOCK_PERSONA = exports.nowTimestamp = exports.msToTimestamp = exports.toMs = void 0;
+/** Convert any Timestamp to unix milliseconds */
+const toMs = (ts) => ts.toMillis?.() ?? ts.seconds * 1000 + Math.floor(ts.nanoseconds / 1_000_000);
+exports.toMs = toMs;
+/** Create a Timestamp from unix milliseconds */
+const msToTimestamp = (ms) => ({
+    seconds: Math.floor(ms / 1000),
+    nanoseconds: (ms % 1000) * 1_000_000,
+});
+exports.msToTimestamp = msToTimestamp;
+/** Timestamp for right now */
+const nowTimestamp = () => (0, exports.msToTimestamp)(Date.now());
+exports.nowTimestamp = nowTimestamp;
 // ---------------------------------------------------------------------------
 // Mock helpers (Group C provides, remove before prod)
 // ---------------------------------------------------------------------------
@@ -15,7 +27,7 @@ exports.MOCK_PERSONA = {
     summary: '正在尋找就業輔導和職業培訓資源的年輕人',
     needs: ['就業輔導', '職業培訓'],
     offers: ['軟體開發經驗', '社區志工'],
-    updatedAt: Date.now(),
+    updatedAt: (0, exports.nowTimestamp)(),
 };
 exports.MOCK_RESOURCE = {
     rid: 'mock-rid-001',
@@ -25,7 +37,7 @@ exports.MOCK_RESOURCE = {
     description: '提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢',
     eligibilityCriteria: ['年齡 18–29 歲', '具中華民國國籍', '非在學中'],
     contactUrl: 'https://www.mol.gov.tw',
-    createdAt: Date.now(),
+    createdAt: (0, exports.nowTimestamp)(),
 };
 exports.MOCK_THREAD = {
     tid: 'mock-tid-001',
@@ -36,8 +48,8 @@ exports.MOCK_THREAD = {
     matchScore: 82,
     userPresence: 'agent',
     govPresence: 'agent',
-    createdAt: Date.now() - 60_000,
-    updatedAt: Date.now(),
+    createdAt: (0, exports.msToTimestamp)(Date.now() - 60_000),
+    updatedAt: (0, exports.nowTimestamp)(),
 };
 exports.MOCK_PEER_PREVIEW = {
     uid: 'mock-uid-002',

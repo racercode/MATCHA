@@ -17,6 +17,7 @@ import {
   MOCK_RESOURCE,
   MOCK_THREAD,
   MOCK_PEER_PREVIEW,
+  msToTimestamp,
   type ServerEvent,
   type AgentThread,
   type ThreadMessage,
@@ -173,8 +174,8 @@ export function createMockApp(): Express {
         userPresence: 'agent',
         govPresence: 'agent',
         peerPresence: 'agent',
-        createdAt: Date.now() - 1000 * 60 * 60 * 20,
-        updatedAt: Date.now() - 1000 * 60 * 60 * 18,
+        createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 20),
+        updatedAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 18),
       },
       peer: {
         uid: 'peer-uid-001',
@@ -195,8 +196,8 @@ export function createMockApp(): Express {
         userPresence: 'agent',
         govPresence: 'agent',
         peerPresence: 'agent',
-        createdAt: Date.now() - 1000 * 60 * 60 * 72,
-        updatedAt: Date.now() - 1000 * 60 * 60 * 70,
+        createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 72),
+        updatedAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 70),
       },
       peer: {
         uid: 'peer-uid-002',
@@ -219,7 +220,7 @@ export function createMockApp(): Express {
         from: `coffee_agent:${MOCK_PERSONA.uid}`,
         type: 'query',
         content: { text: '你們兩個都是文組背景轉設計，應該有很多可以聊的！' },
-        createdAt: Date.now() - 1000 * 60 * 60 * 19,
+        createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 19),
       },
       {
         mid: `${req.params.tid}-msg-2`,
@@ -227,7 +228,7 @@ export function createMockApp(): Express {
         from: 'coffee_agent:peer',
         type: 'answer',
         content: { text: '對，我也覺得！你現在在學哪些設計工具呢？' },
-        createdAt: Date.now() - 1000 * 60 * 60 * 18,
+        createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 18),
       },
     ]
     res.json({ success: true, data: { items: msgs, total: msgs.length, hasMore: false } })
