@@ -1,3 +1,4 @@
+import './pdfNodePolyfill.js'
 import { PDFParse } from 'pdf-parse'
 import * as XLSX from 'xlsx'
 import type { GovernmentResourceDocumentKind } from '@matcha/shared-types'

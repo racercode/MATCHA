@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import './lib/pdfNodePolyfill.js'
 import http from 'http'
 import { createApp } from './app.js'
 import { createWss, upgradeHandler } from './ws/handler.js'

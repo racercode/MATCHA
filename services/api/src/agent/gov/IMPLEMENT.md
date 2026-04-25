@@ -35,7 +35,7 @@ Phase 1 實作最小可行的 Gov Agent 媒合 pipeline：假資料 + Claude Man
 | Markdown Skill | 檔案 | 指向的 custom tool |
 |----------------|------|---------------------|
 | `read_channel` | `skills/read_channel/SKILL.md` | `read_channel` |
-| `query_resource_pdf` | `skills/query_resource_pdf/SKILL.md` | `query_resource_pdf` |
+| `query_resource_document` | `skills/query_resource_document/SKILL.md` | `query_resource_document` |
 | `write_channel_reply` | `skills/write_channel_reply/SKILL.md` | `write_channel_reply` |
 
 ### Custom Tools（Managed Agent）
@@ -59,7 +59,7 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 - 依 `resourceId` 重用既有 Claude Managed Agent / environment / session
 - 若 registry 沒有該資源的資料，才建立 Claude Managed Agent，使用 `claude-haiku-4-5`
 - 上傳 Markdown Skills，並將 skill IDs 掛到 agent
-- 註冊 `read_channel`、`query_resource_pdf`、`write_channel_reply` custom tools
+- 註冊 `read_channel`、`query_resource_document`、`write_channel_reply` custom tools
 - 建立或重用 environment 和 session
 - 匯出 `initGovManagedAgentSession()`，回傳 `sessionId`
 
@@ -106,7 +106,7 @@ main.ts（進入點）
   → runGovAgentPipeline()
        → runGovAgentForChannelUpdate()
           → Claude Managed Agent decides whether to call custom tools
-          → agent.custom_tool_use(read_channel / query_resource_pdf / write_channel_reply)
+          → agent.custom_tool_use(read_channel / query_resource_document / write_channel_reply)
           → backend executes tool wrapper
           → user.custom_tool_result
           → final JSON or null

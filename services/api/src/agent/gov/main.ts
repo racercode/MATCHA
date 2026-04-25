@@ -6,7 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') })
 
 import { fakeGovernmentResources } from './fakeData.js'
-import { readChannelToolWrapper } from './toolWrappers/index.js'
+import { readChannelToolWrapper } from './toolWrappers/readChannel.js'
 import { initGovManagedAgentSession } from './managedAgent.js'
 import { runGovAgentPipeline } from './pipeline.js'
 import type { GovernmentResource } from '@matcha/shared-types'

@@ -3,7 +3,6 @@ import { client } from './managedAgent.js'
 import {
   buildChannelReplyFromAssessment,
   queryResourcePdfToolWrapper,
-  readChannelToolWrapper,
   writeChannelReplyToolWrapper,
 } from './toolWrappers/index.js'
 import type { GovToolRuntimeContext } from './toolWrappers/index.js'
@@ -40,9 +39,7 @@ async function executeGovCustomTool(
   context: GovToolRuntimeContext,
 ) {
   switch (name) {
-    case 'read_channel':
-      return readChannelToolWrapper(input)
-    case 'query_resource_pdf':
+    case 'query_resource_document':
       return queryResourcePdfToolWrapper(input, context)
     case 'write_channel_reply': {
       const replyInput = input as { assessment: MatchAssessment }
@@ -142,7 +139,7 @@ export async function runGovAgentForChannelUpdate(
               instructions: [
                 'A new ChannelMessage was published.',
                 'Use read_channel if you need recent channel context.',
-                'Use query_resource_pdf to inspect the single government resource and document text bound to this resource agent.',
+                'Use query_resource_document to inspect the single government resource and document text bound to this resource agent.',
                 'Evaluate only this bound resource. Do not ask for or propose another resource.',
                 'If this resource should not respond, final answer must be null.',
                 `Only return a match decision when eligible is true and score is at least ${threshold}.`,

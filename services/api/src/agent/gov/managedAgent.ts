@@ -38,8 +38,8 @@ const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
 2. 如果資格條件缺少關鍵資訊，請填入 missingInfo。
 3. score 必須是 0 到 100 的整數。
 4. 只有明顯值得主動推薦時 eligible 才能是 true。
-5. 需要資料時，自己呼叫 read_channel、query_resource_pdf custom tools。
-6. query_resource_pdf 只會回傳你這個 resource agent 被授權看到的單一政府資源與其文件文字。
+5. 需要資料時，自己呼叫 query_resource_document custom tool。
+6. query_resource_document 只會回傳你這個 resource agent 被授權看到的單一政府資源與其文件文字。
 7. 不要嘗試查詢或媒合其他 resourceId。
 8. 如果不需要回應，最後只回傳 null。
 9. 如果需要回應，最後只回傳 MatchDecision JSON；後端 pipeline 會負責建立並寫入 ChannelReply。
@@ -56,19 +56,7 @@ const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
 
 const GOV_CUSTOM_TOOLS = [
   {
-    name: 'read_channel',
-    type: 'custom' as const,
-    description: 'Read recent channel messages from the central channel. Use this to inspect channel updates before deciding whether to match.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        since: { type: 'number', description: 'Optional unix ms timestamp. Only messages newer than this are returned.' },
-        limit: { type: 'number', description: 'Optional max number of messages to return.' },
-      },
-    },
-  },
-  {
-    name: 'query_resource_pdf',
+    name: 'query_resource_document',
     type: 'custom' as const,
     description: 'Query the single government resource and document text bound to this resource agent. Use before evaluating eligibility or fit.',
     input_schema: {
@@ -129,11 +117,9 @@ async function createGovSkills(): Promise<string[]> {
   if (!sharedSkillIdsPromise) {
     sharedSkillIdsPromise = (async () => {
       const existing = await findExistingSkills()
-      const ids: string[] = []
-      for (const name of ['read_channel', 'query_resource_pdf']) {
-        ids.push(await createGovSkill(name, existing))
-      }
-      return ids
+      return Promise.all([
+        createGovSkill('query_resource_document', existing),
+      ])
     })().catch(err => { sharedSkillIdsPromise = null; throw err })
   }
   return sharedSkillIdsPromise
