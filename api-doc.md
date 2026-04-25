@@ -677,6 +677,8 @@ gov_agent_runs/{messageId}
 
 ### ✅ `GET /gov/resources`
 
+列出政府資源基本資料。詳細文件文字存放於 `gov_resources/{rid}/documents/{docId}`，不直接塞在 resource root。
+
 **Response `200`**
 ```json
 {
@@ -689,8 +691,8 @@ gov_agent_runs/{messageId}
         "description": "提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢",
         "eligibilityCriteria": ["年齡 18–29 歲", "具中華民國國籍", "非在學中"],
         "contactUrl": "https://www.mol.gov.tw",
-        "pdfStoragePath": "gov-resources/rid-001.pdf",
-        "createdAt": 1714000000000
+        "createdAt": { "seconds": 1714000000, "nanoseconds": 0 },
+        "updatedAt": { "seconds": 1714000000, "nanoseconds": 0 }
       }
     ]
   }
@@ -701,9 +703,14 @@ gov_agent_runs/{messageId}
 
 ### ✅ `POST /gov/resources`
 
+建立或更新政府資源。若 body 有帶 `rid`，會以該 id upsert；未帶則由後端產生 `rid-{timestamp}`。
+
 **Request body**
 ```json
 {
+  "rid": "rid-001",
+  "agencyId": "taipei-youth-dept",
+  "agencyName": "臺北市青年局",
   "name": "青年就業促進計畫",
   "description": "提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢",
   "eligibilityCriteria": ["年齡 18–29 歲", "具中華民國國籍", "非在學中"],
@@ -715,10 +722,95 @@ gov_agent_runs/{messageId}
 
 ---
 
+### ✅ `GET /gov/resources/:rid`
+
+取得單一政府資源基本資料。
+
+---
+
+### ✅ `GET /gov/resources/:rid/documents`
+
+列出該 resource 底下所有文件文字。
+
+**Response `200`**
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "docId": "doc-001",
+        "rid": "rid-001",
+        "filename": "eligibility.md",
+        "kind": "markdown",
+        "mimeType": "text/markdown",
+        "extractedText": "申請資格：18–29 歲...",
+        "textLength": 8420,
+        "createdAt": { "seconds": 1714000000, "nanoseconds": 0 },
+        "updatedAt": { "seconds": 1714000000, "nanoseconds": 0 }
+      }
+    ]
+  }
+}
+```
+
+---
+
+### ✅ `POST /gov/resources/:rid/documents`
+
+上傳任意資源文件，後端會把文件轉成 `extractedText` 存到 Firestore subcollection：
+
+```txt
+gov_resources/{rid}/documents/{docId}
+```
+
+**Request — `multipart/form-data`**
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `file` | File | 文件檔，支援 PDF / Markdown / txt / html，最大 10 MB |
+| `kind` | string | 選填，`pdf` / `markdown` / `txt` / `html` / `csv` / `xlsx` / `url` / `other` |
+
+解析規則：
+
+- PDF：使用後端 PDF parser 抽文字。
+- Markdown / txt / CSV：以 UTF-8 文字保存。
+- HTML：移除 `script` / `style` / HTML tag 後保存正文文字。
+- XLSX / XLS：逐 sheet 轉成 CSV 文字，並加上 sheet 名稱。
+
+**Request — JSON / form fields**
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `filename` | string | 沒有上傳 file 時建議提供 |
+| `text` 或 `extractedText` | string | 已解析好的文件文字 |
+| `sourceUrl` | string | URL 型文件來源 |
+| `mimeType` | string | 選填 |
+
+**Response `201`**
+```json
+{
+  "success": true,
+  "data": {
+    "docId": "doc-001",
+    "rid": "rid-001",
+    "filename": "eligibility.md",
+    "kind": "markdown",
+    "extractedText": "申請資格：18–29 歲...",
+    "textLength": 8420,
+    "createdAt": { "seconds": 1714000000, "nanoseconds": 0 },
+    "updatedAt": { "seconds": 1714000000, "nanoseconds": 0 }
+  }
+}
+```
+
+---
+
 ### ✅ `POST /gov/resources/:rid/pdf`
 
-上傳資源相關 PDF 文件。
-後端自動解析文字，存入 `gov_resources/{rid}.pdfText`，供 GovAgent 的 `query_resource_pdf` 工具讀取。
+舊版相容 endpoint。新流程建議改用 `POST /gov/resources/:rid/documents`。
+
+後端會解析 PDF 文字並寫成一筆 `documents/{docId}`；`pdfStoragePath` 只保留給舊客戶端相容。
 
 **Request** — `multipart/form-data`
 
@@ -732,7 +824,8 @@ gov_agent_runs/{messageId}
   "success": true,
   "data": {
     "rid": "rid-001",
-    "pdfStoragePath": "gov-resources/rid-001.pdf",
+    "docId": "doc-001",
+    "pdfStoragePath": "gov-resources/rid-001/guide.pdf",
     "extractedChars": 8420
   }
 }
@@ -859,9 +952,12 @@ type ServerEvent =
 | ✅ | `POST /gov/channel-replies/:replyId/open` | `services/api/src/routes/gov.ts` | 建立或回傳既有 HumanThread |
 | ✅ | `GET /gov/dashboard` | `services/api/src/routes/gov.ts` | 支援 `since` |
 | ✅ | `GET /gov/human-threads` | `services/api/src/routes/gov.ts` | gov staff 視角 |
-| ✅ | `GET /gov/resources` | `services/api/src/routes/gov.ts` | 不回傳 `pdfText` |
-| ✅ | `POST /gov/resources` | `services/api/src/routes/gov.ts` | 建立 in-memory resource |
-| ✅ | `POST /gov/resources/:rid/pdf` | `services/api/src/routes/gov.ts` | multipart `pdf`，最大 10 MB |
+| ✅ | `GET /gov/resources` | `services/api/src/routes/gov.ts` | Firestore resources |
+| ✅ | `POST /gov/resources` | `services/api/src/routes/gov.ts` | 建立或更新 Firestore resource |
+| ✅ | `GET /gov/resources/:rid` | `services/api/src/routes/gov.ts` | 單一 resource |
+| ✅ | `GET /gov/resources/:rid/documents` | `services/api/src/routes/gov.ts` | resource 文件文字列表 |
+| ✅ | `POST /gov/resources/:rid/documents` | `services/api/src/routes/gov.ts` | multipart `file` 或已解析文字 |
+| ✅ | `POST /gov/resources/:rid/pdf` | `services/api/src/routes/gov.ts` | 舊版相容，內部寫入 documents |
 | ✅ | WS `persona_message` → `agent_reply` | `services/api/src/ws/handler.ts` | persona stub streaming |
 | ✅ | WS `peer_message` | `services/api/src/ws/handler.ts` | 寫入 peer messages 並推播雙方 |
 | ✅ | WS `human_message` | `services/api/src/ws/handler.ts` | citizen / gov staff 共用 |

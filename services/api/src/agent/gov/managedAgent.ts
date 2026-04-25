@@ -39,7 +39,7 @@ const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
 3. score 必須是 0 到 100 的整數。
 4. 只有明顯值得主動推薦時 eligible 才能是 true。
 5. 需要資料時，自己呼叫 read_channel、query_resource_pdf custom tools。
-6. query_resource_pdf 只會回傳你這個 resource agent 被授權看到的單一政府資源。
+6. query_resource_pdf 只會回傳你這個 resource agent 被授權看到的單一政府資源與其文件文字。
 7. 不要嘗試查詢或媒合其他 resourceId。
 8. 如果不需要回應，最後只回傳 null。
 9. 如果需要回應，最後只回傳 MatchDecision JSON；後端 pipeline 會負責建立並寫入 ChannelReply。
@@ -70,7 +70,7 @@ const GOV_CUSTOM_TOOLS = [
   {
     name: 'query_resource_pdf',
     type: 'custom' as const,
-    description: 'Query the single government resource bound to this resource agent. Use before evaluating eligibility or fit.',
+    description: 'Query the single government resource and document text bound to this resource agent. Use before evaluating eligibility or fit.',
     input_schema: {
       type: 'object' as const,
       properties: {

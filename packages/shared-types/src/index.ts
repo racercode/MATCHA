@@ -88,8 +88,34 @@ export interface GovernmentResource {
   description: string
   eligibilityCriteria: string[]
   contactUrl?: string
-  pdfStoragePath?: string  // filled after PDF upload
+  pdfStoragePath?: string  // legacy compatibility for the old /pdf upload API
   createdAt: Timestamp
+  updatedAt?: Timestamp
+}
+
+export type GovernmentResourceDocumentKind =
+  | 'pdf'
+  | 'markdown'
+  | 'txt'
+  | 'html'
+  | 'csv'
+  | 'xlsx'
+  | 'url'
+  | 'other'
+
+// Firestore: gov_resources/{rid}/documents/{docId}
+export interface GovernmentResourceDocument {
+  docId: string
+  rid: string
+  filename: string
+  kind: GovernmentResourceDocumentKind
+  mimeType?: string
+  sourceUrl?: string
+  storagePath?: string
+  extractedText: string
+  textLength: number
+  createdAt: Timestamp
+  updatedAt?: Timestamp
 }
 
 // ---------------------------------------------------------------------------

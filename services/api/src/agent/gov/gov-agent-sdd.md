@@ -190,7 +190,8 @@ export interface GovernmentResource {
   description: string
   eligibilityCriteria: string[]
   contactUrl?: string
-  createdAt: number
+  createdAt: Timestamp
+  updatedAt?: Timestamp
 }
 ```
 
@@ -204,6 +205,46 @@ export interface GovernmentResource {
 - `eligibilityCriteria`：申請條件或適用對象
 - `contactUrl`：申請或說明頁
 - `createdAt`：建立時間
+- `updatedAt`：最後更新時間
+
+資源的詳細文件不放在 root document，而是放在 subcollection：
+
+```txt
+gov_resources/{rid}/documents/{docId}
+```
+
+```ts
+export type GovernmentResourceDocumentKind =
+  | 'pdf'
+  | 'markdown'
+  | 'txt'
+  | 'html'
+  | 'csv'
+  | 'xlsx'
+  | 'url'
+  | 'other'
+
+export interface GovernmentResourceDocument {
+  docId: string
+  rid: string
+  filename: string
+  kind: GovernmentResourceDocumentKind
+  mimeType?: string
+  sourceUrl?: string
+  storagePath?: string
+  extractedText: string
+  textLength: number
+  createdAt: Timestamp
+  updatedAt?: Timestamp
+}
+```
+
+設計原則：
+
+- DB 不以 PDF 為核心，而是以 `documents` 表示各種來源：PDF、Markdown、txt、html、CSV、XLSX、URL。
+- Agent 不直接讀原始檔案，只讀 `extractedText`。
+- 批次匯入腳本可以用一個資料夾代表一個 resource，將 `resource.json` 與同資料夾文件透過 API 上傳。
+- API 上傳文件時會解析內容：PDF 用 PDF parser 抽文字，Markdown / txt / CSV 以 UTF-8 保存，HTML 移除 script/style/tag 後保存正文文字，XLSX / XLS 逐 sheet 轉成 CSV 文字。
 
 ### 4.3 ChannelReply
 
@@ -397,23 +438,23 @@ export async function readChannelToolWrapper(): Promise<ChannelMessage[]> {
 }
 ```
 
-### 6.3 Step 2：查詢本機關資源資料
+### 6.3 Step 2：查詢本 resource 的資料與文件
 
-第一版讓 `query_resource_pdf` Markdown Skill 指向 `query_resource_pdf` custom tool；後端收到 custom tool event 後，執行 `queryResourcePdfToolWrapper` 從 fake resources 裡面用 `agencyId` 篩選。
+`query_resource_pdf` Markdown Skill 指向 `query_resource_pdf` custom tool；後端收到 custom tool event 後，執行 `queryResourcePdfToolWrapper`。正式環境會用 runtime context 的 `resourceId` 查 Firestore `gov_resources/{rid}` 與 `gov_resources/{rid}/documents/*`，不允許 Agent 自己指定其他 resource。
 
 ```ts
-import type { GovernmentResource } from '@matcha/shared-types'
+import type { GovernmentResource, GovernmentResourceDocument } from '@matcha/shared-types'
 
-export function queryResourcePdfToolWrapper(agencyId: string): GovernmentResource[] {
-  return fakeGovernmentResources.filter(resource => resource.agencyId === agencyId)
+interface QueryResourcePdfOutput {
+  resource: GovernmentResource | null
+  resources: GovernmentResource[]
+  documents: GovernmentResourceDocument[]
 }
-```
 
-之後接 Firestore 時，這個函式才換成：
-
-```ts
-export async function queryResourcePdfToolWrapper(agencyId: string): Promise<GovernmentResource[]> {
-  // TODO: query Firestore /resources where agencyId == agencyId
+export async function queryResourcePdfToolWrapper(input, context): Promise<QueryResourcePdfOutput> {
+  const resource = await getGovernmentResource(context.resourceId)
+  const documents = resource ? await listGovernmentResourceDocuments(resource.rid) : []
+  return { resource, resources: resource ? [resource] : [], documents }
 }
 ```
 
@@ -710,7 +751,9 @@ read_channel skill -> MCP tool -> Firestore channel_messages
 
 #### `query_resource_pdf`
 
-用途：查詢這個 Resource Agent 綁定的單一政府方案資料。
+用途：查詢這個 Resource Agent 綁定的單一政府方案資料，以及該方案底下所有可供判斷的文件文字。
+
+> 名稱仍保留 `query_resource_pdf` 是為了相容既有 Managed Agent tool 註冊；實際語意已是 `query_resource_documents`。
 
 Input：
 
@@ -726,7 +769,9 @@ Output：
 
 ```ts
 interface QueryProgramDocsOutput {
+  resource: GovernmentResource | null
   resources: GovernmentResource[]
+  documents: GovernmentResourceDocument[]
 }
 ```
 
@@ -739,13 +784,16 @@ skills/query_resource_pdf/SKILL.md
 Tool target：
 
 ```txt
-query_resource_pdf skill -> queryResourcePdfToolWrapper -> fakeData.ts
+query_resource_pdf skill
+-> queryResourcePdfToolWrapper
+-> Firestore gov_resources/{rid}
+-> Firestore gov_resources/{rid}/documents/*
 ```
 
-之後實作：
+No-Firebase fallback：
 
 ```txt
-query_resource_pdf skill -> queryResourcePdfToolWrapper -> Firestore gov_resources/{rid}.pdfText
+query_resource_pdf skill -> queryResourcePdfToolWrapper -> fakeData.ts summary document
 ```
 
 RAG 版：
@@ -1181,7 +1229,12 @@ Persona Agent writes channel_messages/{messageId}
    - `listRecentChannelMessages({ since, limit })`
 2. 建立 `services/api/src/lib/govResourcesRepo.ts`
    - `listGovernmentResources()`
+   - `getGovernmentResource(rid)`
+   - `upsertGovernmentResource(resource)`
+   - `listGovernmentResourceDocuments(rid)`
+   - `createGovernmentResourceDocument(rid, document)`
    - 從 Firestore `gov_resources` 讀正式資源，不再用 fake resources 跑 trigger flow
+   - 從 Firestore `gov_resources/{rid}/documents/*` 讀 resource 文件文字，提供給 `query_resource_pdf`
 3. 建立 `services/api/src/lib/govAgentRunsRepo.ts`
    - `tryStartGovAgentRun(messageId)`
    - `completeGovAgentRun(messageId, { resourceCount, matchCount })`
@@ -1431,6 +1484,10 @@ Firestore collection: agent_registry
 
 - `GET /gov/resources`
 - `POST /gov/resources`
+- `GET /gov/resources/:rid`
+- `GET /gov/resources/:rid/documents`
+- `POST /gov/resources/:rid/documents`
+- `POST /gov/resources/:rid/pdf`（舊版相容，內部寫入 documents）
 - `GET /gov/channel-replies`
 - match dashboard
 - 承辦人開啟對話按鈕
@@ -1465,6 +1522,7 @@ Gov Agent 不直接負責通知使用者；它只負責產生可被 Match Inbox 
 - Firestore channel_messages collection
 - Firestore channel_replies collection
 - Firestore gov_resources collection
+- Firestore gov_resources/{rid}/documents subcollection
 - Firestore human_threads collection（真人介入後）
 - WebSocket client registry（真人 / Coffee chat）
 - Firebase Auth middleware

@@ -115,26 +115,31 @@ describe('readChannelToolWrapper', () => {
 // ---------------------------------------------------------------------------
 
 describe('queryResourcePdfToolWrapper', () => {
-  it('returns only the resource bound to the runtime context', () => {
-    const { resources } = queryResourcePdfToolWrapper({}, {
+  it('returns only the resource bound to the runtime context', async () => {
+    const { resource, resources, documents } = await queryResourcePdfToolWrapper({}, {
       agencyId: 'taipei-youth-dept',
       resourceId: 'rid-youth-career-001',
     })
     assert.equal(resources.length, 1)
+    assert.equal(resource?.rid, 'rid-youth-career-001')
     assert.equal(resources[0].agencyId, 'taipei-youth-dept')
     assert.equal(resources[0].rid, 'rid-youth-career-001')
+    assert.equal(documents.length, 1)
+    assert.match(documents[0].extractedText, /青年職涯探索諮詢/)
   })
 
-  it('returns empty for unknown runtime context', () => {
-    const { resources } = queryResourcePdfToolWrapper({}, {
+  it('returns empty for unknown runtime context', async () => {
+    const { resource, resources, documents } = await queryResourcePdfToolWrapper({}, {
       agencyId: 'nonexistent',
       resourceId: 'rid-youth-career-001',
     })
+    assert.equal(resource, null)
     assert.equal(resources.length, 0)
+    assert.equal(documents.length, 0)
   })
 
-  it('ignores any resourceId supplied by the agent input', () => {
-    const { resources } = queryResourcePdfToolWrapper({
+  it('ignores any resourceId supplied by the agent input', async () => {
+    const { resources } = await queryResourcePdfToolWrapper({
       resourceId: 'rid-youth-startup-003',
     } as never, {
       agencyId: 'taipei-youth-dept',

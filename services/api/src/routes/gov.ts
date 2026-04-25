@@ -8,6 +8,14 @@ import { runGovAgentPipeline } from '../agent/gov/pipeline.js'
 import type { GovAgentPipelineResult } from '../agent/gov/types.js'
 import { hasFirebaseAdminEnv } from '../lib/firebaseEnv.js'
 import { db } from '../lib/firebase.js'
+import {
+  createGovernmentResourceDocument,
+  getGovernmentResource,
+  listGovernmentResourceDocuments,
+  listGovernmentResources,
+  upsertGovernmentResource,
+} from '../lib/govResourcesRepo.js'
+import { extractTextFromUploadedFile, normalizeDocumentKind } from '../lib/documentParser.js'
 
 const router: IRouter = Router()
 
@@ -481,39 +489,112 @@ router.get('/gov/human-threads', async (req, res) => {
 
 // GET /gov/resources
 router.get('/gov/resources', async (_req, res) => {
-  const snap = await db.collection('gov_resources').get()
-  const items = snap.docs.map(d => {
-    const { pdfText: _, ...data } = d.data() as Record<string, unknown>
-    return { rid: d.id, ...data }
-  })
+  const items = await listGovernmentResources()
   res.json({ success: true, data: { items } })
 })
 
 // POST /gov/resources
 router.post('/gov/resources', async (req, res) => {
-  const { name, description, eligibilityCriteria, contactUrl } = req.body
+  const { rid, agencyId, agencyName, name, description, eligibilityCriteria, contactUrl } = req.body
   if (!name || !description || !Array.isArray(eligibilityCriteria)) {
     res.status(400).json({ success: false, error: '缺少必要欄位', data: null })
     return
   }
 
-  const rid = `rid-${Date.now()}`
-  const resource = {
+  const resource = await upsertGovernmentResource({
+    rid: typeof rid === 'string' && rid.trim() ? rid.trim() : `rid-${Date.now()}`,
+    agencyId: typeof agencyId === 'string' && agencyId.trim() ? agencyId.trim() : DEFAULT_AGENCY_ID,
+    agencyName: typeof agencyName === 'string' && agencyName.trim() ? agencyName.trim() : '臺北市青年局',
     name,
     description,
     eligibilityCriteria: eligibilityCriteria as string[],
     ...(contactUrl ? { contactUrl } : {}),
-    createdAt: Date.now(),
+  })
+
+  res.status(201).json({ success: true, data: resource })
+})
+
+// GET /gov/resources/:rid
+router.get('/gov/resources/:rid', async (req, res) => {
+  const resource = await getGovernmentResource(req.params.rid)
+  if (!resource) {
+    res.status(404).json({ success: false, error: '資源不存在', data: null })
+    return
   }
-  await db.collection('gov_resources').doc(rid).set(resource)
-  res.status(201).json({ success: true, data: { rid, ...resource } })
+
+  res.json({ success: true, data: resource })
+})
+
+// GET /gov/resources/:rid/documents
+router.get('/gov/resources/:rid/documents', async (req, res) => {
+  const resource = await getGovernmentResource(req.params.rid)
+  if (!resource) {
+    res.status(404).json({ success: false, error: '資源不存在', data: null })
+    return
+  }
+
+  const documents = await listGovernmentResourceDocuments(req.params.rid)
+  res.json({ success: true, data: { items: documents } })
+})
+
+// POST /gov/resources/:rid/documents
+router.post('/gov/resources/:rid/documents', upload.single('file'), async (req, res) => {
+  const { rid } = req.params
+  const resource = await getGovernmentResource(rid)
+  if (!resource) {
+    res.status(404).json({ success: false, error: '資源不存在', data: null })
+    return
+  }
+
+  const body = req.body as Record<string, unknown>
+  const file = req.file
+  const filename =
+    (typeof body.filename === 'string' && body.filename.trim()) ||
+    file?.originalname ||
+    (typeof body.sourceUrl === 'string' && body.sourceUrl.trim()) ||
+    `document-${Date.now()}`
+  const mimeType = file?.mimetype ?? (typeof body.mimeType === 'string' ? body.mimeType : undefined)
+  const kind = normalizeDocumentKind(body.kind, filename, mimeType)
+  const sourceUrl = typeof body.sourceUrl === 'string' && body.sourceUrl.trim() ? body.sourceUrl.trim() : undefined
+  let extractedText =
+    (typeof body.extractedText === 'string' && body.extractedText) ||
+    (typeof body.text === 'string' && body.text) ||
+    ''
+
+  if (!extractedText && file) {
+    try {
+      extractedText = await extractTextFromUploadedFile(file)
+    } catch (error) {
+      res.status(400).json({
+        success: false,
+        error: error instanceof Error ? `文件解析失敗：${error.message}` : '文件解析失敗',
+        data: null,
+      })
+      return
+    }
+  }
+
+  if (!extractedText.trim()) {
+    res.status(400).json({ success: false, error: '缺少可儲存的文件文字，請提供 file、text 或 extractedText', data: null })
+    return
+  }
+
+  const document = await createGovernmentResourceDocument(rid, {
+    filename,
+    kind: sourceUrl && !file ? 'url' : kind,
+    ...(mimeType ? { mimeType } : {}),
+    ...(sourceUrl ? { sourceUrl } : {}),
+    extractedText,
+  })
+
+  res.status(201).json({ success: true, data: document })
 })
 
 // POST /gov/resources/:rid/pdf
 router.post('/gov/resources/:rid/pdf', upload.single('pdf'), async (req, res) => {
   const { rid } = req.params
-  const resourceDoc = await db.collection('gov_resources').doc(rid).get()
-  if (!resourceDoc.exists) {
+  const resource = await getGovernmentResource(rid)
+  if (!resource) {
     res.status(404).json({ success: false, error: '資源不存在', data: null })
     return
   }
@@ -522,11 +603,29 @@ router.post('/gov/resources/:rid/pdf', upload.single('pdf'), async (req, res) =>
     return
   }
 
-  const pdfStoragePath = `gov-resources/${rid}.pdf`
-  const pdfText = `[PDF uploaded: ${req.file.originalname}, ${req.file.size} bytes]`
-  await db.collection('gov_resources').doc(rid).update({ pdfStoragePath, pdfText })
+  const pdfStoragePath = `gov-resources/${rid}/${req.file.originalname}`
+  let extractedText: string
+  try {
+    extractedText = await extractTextFromUploadedFile(req.file)
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? `PDF 解析失敗：${error.message}` : 'PDF 解析失敗',
+      data: null,
+    })
+    return
+  }
 
-  res.json({ success: true, data: { rid, pdfStoragePath, extractedChars: req.file.size } })
+  const document = await createGovernmentResourceDocument(rid, {
+    filename: req.file.originalname,
+    kind: 'pdf',
+    mimeType: req.file.mimetype,
+    storagePath: pdfStoragePath,
+    extractedText,
+  })
+  await upsertGovernmentResource({ ...resource, pdfStoragePath })
+
+  res.json({ success: true, data: { rid, docId: document.docId, pdfStoragePath, extractedChars: document.textLength } })
 })
 
 export default router

@@ -94,6 +94,9 @@ pnpm --filter api build
 
 # 跑 Gov Agent / route 相關測試
 pnpm --filter api gov:test
+
+# 批次上傳 data/resources/* 到 gov resources API
+pnpm --filter api gov:upload-resources
 ```
 
 API 詳細路徑與已完成狀態請看 `api-doc.md`。

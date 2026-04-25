@@ -50,6 +50,21 @@ export interface GovernmentResource {
     contactUrl?: string;
     pdfStoragePath?: string;
     createdAt: Timestamp;
+    updatedAt?: Timestamp;
+}
+export type GovernmentResourceDocumentKind = 'pdf' | 'markdown' | 'txt' | 'html' | 'csv' | 'xlsx' | 'url' | 'other';
+export interface GovernmentResourceDocument {
+    docId: string;
+    rid: string;
+    filename: string;
+    kind: GovernmentResourceDocumentKind;
+    mimeType?: string;
+    sourceUrl?: string;
+    storagePath?: string;
+    extractedText: string;
+    textLength: number;
+    createdAt: Timestamp;
+    updatedAt?: Timestamp;
 }
 export interface ChannelReply {
     replyId: string;

@@ -142,7 +142,7 @@ export async function runGovAgentForChannelUpdate(
               instructions: [
                 'A new ChannelMessage was published.',
                 'Use read_channel if you need recent channel context.',
-                'Use query_resource_pdf to inspect the single government resource bound to this resource agent.',
+                'Use query_resource_pdf to inspect the single government resource and document text bound to this resource agent.',
                 'Evaluate only this bound resource. Do not ask for or propose another resource.',
                 'If this resource should not respond, final answer must be null.',
                 `Only return a match decision when eligible is true and score is at least ${threshold}.`,

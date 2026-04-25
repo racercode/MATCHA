@@ -20,6 +20,15 @@ export async function verifyToken(req: Request, res: Response, next: NextFunctio
     return
   }
 
+  if (process.env.NODE_ENV === 'test' && process.env.ALLOW_TEST_AUTH === 'true') {
+    const authed = req as AuthedRequest
+    authed.uid = idToken
+    authed.role = 'gov_staff'
+    authed.govId = 'test-gov'
+    next()
+    return
+  }
+
   try {
     const decoded = await auth.verifyIdToken(idToken)
     const uid = decoded.uid

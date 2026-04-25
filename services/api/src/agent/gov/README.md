@@ -24,7 +24,7 @@ services/api/src/agent/gov/
 │   └── escalate_to_caseworker/SKILL.md
 ├── toolWrappers/
 │   ├── readChannel.ts        # 讀取 persona 廣播
-│   ├── queryResourcePdf.ts   # 查詢政府資源 / PDF 文字
+│   ├── queryResourcePdf.ts   # 查詢政府資源 / documents 文字
 │   ├── writeChannelReply.ts  # 建立 channel reply
 │   └── index.ts              # 統一匯出
 ├── IMPLEMENT.md          # 實作細節說明
@@ -84,7 +84,7 @@ npm run gov:run
 
 **Custom Tools** 是 Claude Managed Agent 可自主呼叫的工具介面。Agent 呼叫 custom tool 時，後端收到 `agent.custom_tool_use` event，執行對應 tool wrapper，再用 `user.custom_tool_result` 回傳結果。
 
-**Tool Wrappers** 是 TypeScript 執行層。目前讀假資料，之後改接 Firebase、MCP 或外部 API 時，custom tool schema 不用改。`query_resource_pdf` 會依 runtime context 只回傳該 Agent 綁定的單一 `resourceId`。
+**Tool Wrappers** 是 TypeScript 執行層。`query_resource_pdf` 會依 runtime context 只回傳該 Agent 綁定的單一 `resourceId`，有 Firebase env 時讀 `gov_resources/{rid}` 與 `gov_resources/{rid}/documents/*`，沒有 Firebase env 時 fallback 到 fake data summary document。文件上傳時由 API 解析成 `extractedText`：PDF 透過 parser 抽文字，Markdown / txt / CSV 直接保存，HTML 會先去除 tag，XLSX / XLS 會逐 sheet 轉成 CSV 文字。
 
 **Pipeline** 負責在 channel 更新時逐一喚醒 Resource Agent，處理 custom tool events，並接收 Agent 最終回傳的 match result 或 `null`。
 
