@@ -1,9 +1,9 @@
 import type { ChannelMessage, GovernmentResource } from '@matcha/shared-types'
 import { client } from './managedAgent.js'
 import {
-  proposeMatchToolWrapper,
-  queryProgramDocsToolWrapper,
+  queryResourcePdfToolWrapper,
   readChannelToolWrapper,
+  writeChannelReplyToolWrapper,
 } from './toolWrappers/index.js'
 import type { GovToolRuntimeContext } from './toolWrappers/index.js'
 import type { MatchDecision, MatchAssessment, GovAgentPipelineResult } from './types.js'
@@ -28,10 +28,6 @@ export function parseMatchDecision(rawText: string): MatchDecision {
     throw new Error('Claude response missing missingInfo')
   }
 
-  if (typeof parsed.suggestedFirstMessage !== 'string') {
-    throw new Error('Claude response missing suggestedFirstMessage')
-  }
-
   return parsed
 }
 
@@ -43,16 +39,16 @@ async function executeGovCustomTool(
   switch (name) {
     case 'read_channel':
       return readChannelToolWrapper(input)
-    case 'query_program_docs':
-      return queryProgramDocsToolWrapper(input, context)
-    case 'propose_match': {
-      const proposeInput = input as { assessment: MatchAssessment }
-      const resource = proposeInput.assessment.resource
+    case 'query_resource_pdf':
+      return queryResourcePdfToolWrapper(input, context)
+    case 'write_channel_reply': {
+      const replyInput = input as { assessment: MatchAssessment }
+      const resource = replyInput.assessment.resource
       if (resource.agencyId !== context.agencyId || resource.rid !== context.resourceId) {
-        throw new Error('propose_match resource does not match this resource agent context')
+        throw new Error('write_channel_reply resource does not match this resource agent context')
       }
 
-      return proposeMatchToolWrapper(proposeInput)
+      return writeChannelReplyToolWrapper(replyInput)
     }
     default:
       throw new Error(`Unknown Gov Agent custom tool: ${name}`)
@@ -66,12 +62,11 @@ function parseGovAgentFinalResponse(rawText: string): GovAgentPipelineResult | n
   try {
     const parsed = JSON.parse(cleaned) as Partial<GovAgentPipelineResult> & { respond?: boolean }
     if (parsed.respond === false) return null
-    if (!parsed.assessment || !parsed.thread || !parsed.initialMessage) return null
+    if (!parsed.assessment || !parsed.reply) return null
 
     return {
       assessment: parsed.assessment,
-      thread: parsed.thread,
-      initialMessage: parsed.initialMessage,
+      reply: parsed.reply,
     }
   } catch {
     return null
@@ -82,6 +77,7 @@ export async function runGovAgentForChannelUpdate(
   sessionId: string,
   channelMessage: ChannelMessage,
   context: GovToolRuntimeContext & { resourceName?: string },
+  threshold = 70,
 ): Promise<GovAgentPipelineResult | null> {
   const stream = await client.beta.sessions.events.stream(sessionId)
 
@@ -97,10 +93,11 @@ export async function runGovAgentForChannelUpdate(
               instructions: [
                 'A new ChannelMessage was published.',
                 'Use read_channel if you need recent channel context.',
-                'Use query_program_docs to inspect the single government resource bound to this resource agent.',
+                'Use query_resource_pdf to inspect the single government resource bound to this resource agent.',
                 'Evaluate only this bound resource. Do not ask for or propose another resource.',
                 'If this resource should not respond, final answer must be null.',
-                'If a match should be proposed, call propose_match first, then final answer must be the propose_match result JSON.',
+                `Only call write_channel_reply when eligible is true and score is at least ${threshold}.`,
+                'If a match should be proposed, call write_channel_reply first, then final answer must be the write_channel_reply result JSON.',
               ],
               agencyId: context.agencyId,
               resourceId: context.resourceId,
@@ -114,20 +111,19 @@ export async function runGovAgentForChannelUpdate(
   })
 
   let output = ''
-  let proposedMatch: GovAgentPipelineResult | null = null
+  let channelReplyResult: GovAgentPipelineResult | null = null
 
   for await (const event of stream) {
     if (event.type === 'agent.custom_tool_use') {
       console.log(`  [tool] ${event.name} called`, JSON.stringify(event.input).slice(0, 200))
       try {
         const toolResult = await executeGovCustomTool(event.name, event.input, context)
-        if (event.name === 'propose_match') {
-          const result = toolResult as Omit<GovAgentPipelineResult, 'assessment'> & { thread: GovAgentPipelineResult['thread'] }
+        if (event.name === 'write_channel_reply') {
+          const result = toolResult as Omit<GovAgentPipelineResult, 'assessment'>
           const assessment = (event.input as { assessment: MatchAssessment }).assessment
-          proposedMatch = {
+          channelReplyResult = {
             assessment,
-            thread: result.thread,
-            initialMessage: result.initialMessage,
+            reply: result.reply,
           }
         }
 
@@ -174,7 +170,7 @@ export async function runGovAgentForChannelUpdate(
     console.log(`  [agent output] ${output.slice(0, 300)}`)
   }
 
-  return proposedMatch ?? parseGovAgentFinalResponse(output)
+  return channelReplyResult ?? parseGovAgentFinalResponse(output)
 }
 
 export async function runGovAgentPipeline(
@@ -189,11 +185,16 @@ export async function runGovAgentPipeline(
 
     for (const { sessionId, resource } of resourceAgents) {
       console.log(`  [Resource Agent] ${resource.name} (${resource.rid})`)
-      const result = await runGovAgentForChannelUpdate(sessionId, message, {
-        agencyId: resource.agencyId,
-        resourceId: resource.rid,
-        resourceName: resource.name,
-      })
+      const result = await runGovAgentForChannelUpdate(
+        sessionId,
+        message,
+        {
+          agencyId: resource.agencyId,
+          resourceId: resource.rid,
+          resourceName: resource.name,
+        },
+        threshold,
+      )
 
       if (!result) {
         console.log('  -> No match proposed')
@@ -201,8 +202,7 @@ export async function runGovAgentPipeline(
         console.log(`  -> Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
       } else {
         results.push(result)
-        console.log(`  -> Thread created: ${result.thread.tid}`)
-        console.log(`  -> Initial message created: ${result.initialMessage.mid}`)
+        console.log(`  -> Channel reply created: ${result.reply.replyId}`)
       }
     }
   }

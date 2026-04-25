@@ -44,7 +44,7 @@ export interface PeerPreview {
 }
 
 // ---------------------------------------------------------------------------
-// Central Channel  (Firebase Realtime DB — ephemeral)
+// Central Channel
 // ---------------------------------------------------------------------------
 
 export interface ChannelMessage {
@@ -52,6 +52,15 @@ export interface ChannelMessage {
   uid: string
   summary: string
   publishedAt: number // unix ms
+}
+
+export interface ChannelReply {
+  replyId: string
+  messageId: string   // points to channel_messages/{msgId}
+  govId: string       // government resource id
+  content: string     // GovAgent rationale shown in Match Inbox / Dashboard
+  matchScore: number  // 0-100
+  createdAt: number   // unix ms
 }
 
 // ---------------------------------------------------------------------------

@@ -1,11 +1,10 @@
-import type { ChannelMessage, GovernmentResource, AgentThread, ThreadMessage } from '@matcha/shared-types'
+import type { ChannelMessage, GovernmentResource, ChannelReply } from '@matcha/shared-types'
 
 export interface MatchDecision {
   eligible: boolean
   score: number
   reason: string
   missingInfo: string[]
-  suggestedFirstMessage: string
 }
 
 export interface MatchAssessment {
@@ -16,6 +15,5 @@ export interface MatchAssessment {
 
 export interface GovAgentPipelineResult {
   assessment: MatchAssessment
-  thread: AgentThread
-  initialMessage: ThreadMessage
+  reply: ChannelReply
 }

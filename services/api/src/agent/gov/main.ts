@@ -48,9 +48,8 @@ async function main() {
     console.log(`Score:    ${result.assessment.decision?.score ?? 'N/A'}`)
     console.log(`Reason:   ${result.assessment.decision?.reason ?? 'N/A'}`)
     console.log(`Missing:  ${result.assessment.decision?.missingInfo?.join(', ') || '(none)'}`)
-    console.log(`Message:  ${result.assessment.decision?.suggestedFirstMessage ?? 'N/A'}`)
-    console.log(`Thread:   ${result.thread.tid}`)
-    console.log(`Msg ID:   ${result.initialMessage.mid}`)
+    console.log(`Reply:    ${result.reply.replyId}`)
+    console.log(`Content:  ${result.reply.content}`)
     console.log()
   }
 

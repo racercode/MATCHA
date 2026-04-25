@@ -1,16 +1,16 @@
 ---
-name: query_program_docs
-description: Query the resource document bound to this resource agent
+name: query_resource_pdf
+description: Query the PDF/resource document bound to this resource agent
 ---
 
-# query_program_docs
+# query_resource_pdf
 
 Use this skill when Gov Agent needs its own government resource data before evaluating a match.
 
 ## Input
 
 ```ts
-interface QueryProgramDocsInput {
+interface QueryResourcePdfInput {
   includeDetails?: boolean
 }
 ```
@@ -18,19 +18,19 @@ interface QueryProgramDocsInput {
 ## Output
 
 ```ts
-interface QueryProgramDocsOutput {
+interface QueryResourcePdfOutput {
   resources: GovernmentResource[]
 }
 ```
 
 ## Tool Call
 
-Call the `query_program_docs` custom tool.
+Call the `query_resource_pdf` custom tool.
 
 Current implementation:
 
 ```txt
-query_program_docs custom tool -> backend -> queryProgramDocsToolWrapper -> fakeData.ts
+query_resource_pdf custom tool -> backend -> queryResourcePdfToolWrapper -> fakeData.ts
 ```
 
 The backend decides which `GovernmentResource` is visible from the current agent/session context. Do not pass `agencyId` or `resourceId`; this skill returns only the resource bound to this resource agent.
@@ -38,7 +38,7 @@ The backend decides which `GovernmentResource` is visible from the current agent
 Future implementation:
 
 ```txt
-query_program_docs custom tool -> backend -> queryProgramDocsToolWrapper -> Firestore or RAG, scoped by session/resource registry
+query_resource_pdf custom tool -> backend -> queryResourcePdfToolWrapper -> Firestore gov_resources/{rid}.pdfText
 ```
 
 ## Notes

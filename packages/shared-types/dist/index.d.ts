@@ -28,6 +28,14 @@ export interface ChannelMessage {
     summary: string;
     publishedAt: number;
 }
+export interface ChannelReply {
+    replyId: string;
+    messageId: string;
+    govId: string;
+    content: string;
+    matchScore: number;
+    createdAt: number;
+}
 export interface GovernmentResource {
     rid: string;
     agencyId: string;

@@ -162,37 +162,24 @@ describe('serializeGovAgentResult', () => {
         score: 90,
         reason: '需求與資源高度匹配',
         missingInfo: ['是否可投入兩個月實習'],
-        suggestedFirstMessage: '你好！',
       },
     }
     const result: GovAgentPipelineResult = {
       assessment,
-      thread: {
-        tid: 'tid-test',
-        type: 'gov_user',
-        initiatorId: 'gov:rid-design-intern-002',
-        responderId: 'user:user-xiaoya-001',
-        status: 'negotiating',
+      reply: {
+        replyId: 'reply-test',
+        messageId: fakeChannelMessages[0].msgId,
+        govId: 'rid-design-intern-002',
+        content: '需求與資源高度匹配',
         matchScore: 90,
-        userPresence: 'agent',
-        govPresence: 'agent',
-        createdAt: 1710000000000,
-        updatedAt: 1710000000000,
-      },
-      initialMessage: {
-        mid: 'msg-test',
-        tid: 'tid-test',
-        from: 'gov_agent:rid-design-intern-002',
-        type: 'decision',
-        content: {},
         createdAt: 1710000000000,
       },
     }
 
     const serialized = serializeGovAgentResult(result)
 
-    assert.equal(serialized.thread.tid, 'tid-test')
-    assert.equal(serialized.initialMessage.mid, 'msg-test')
+    assert.equal(serialized.reply.replyId, 'reply-test')
+    assert.equal(serialized.reply.messageId, fakeChannelMessages[0].msgId)
     assert.equal(serialized.reason, '需求與資源高度匹配')
     assert.deepEqual(serialized.missingInfo, ['是否可投入兩個月實習'])
     assert.equal(serialized.assessment, assessment)

@@ -65,8 +65,7 @@ export function selectResources(agencyId: string, resourceId?: string): AgentGov
 
 export function serializeGovAgentResult(result: GovAgentPipelineResult) {
   return {
-    thread: result.thread,
-    initialMessage: result.initialMessage,
+    reply: result.reply,
     reason: result.assessment.decision.reason,
     missingInfo: result.assessment.decision.missingInfo,
     assessment: result.assessment,
