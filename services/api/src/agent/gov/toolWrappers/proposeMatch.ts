@@ -13,6 +13,9 @@ export interface ProposeMatchOutput {
 export function proposeMatchToolWrapper(input: ProposeMatchInput): ProposeMatchOutput {
   const { assessment } = input
   const now = Date.now()
+  const decision = assessment.decision as MatchAssessment['decision'] & { reasoning?: string }
+  const reason = decision.reason ?? decision.reasoning ?? ''
+  const suggestedFirstMessage = decision.suggestedFirstMessage ?? ''
 
   const thread: AgentThread = {
     tid: `tid-gov-${assessment.resource.rid}-${assessment.broadcast.uid}`,
@@ -20,8 +23,8 @@ export function proposeMatchToolWrapper(input: ProposeMatchInput): ProposeMatchO
     initiatorId: `gov:${assessment.resource.rid}`,
     responderId: `user:${assessment.broadcast.uid}`,
     status: 'negotiating',
-    matchScore: assessment.decision.score,
-    summary: assessment.decision.reason,
+    matchScore: decision.score,
+    summary: reason,
     userPresence: 'agent',
     govPresence: 'agent',
     createdAt: now,
@@ -34,12 +37,12 @@ export function proposeMatchToolWrapper(input: ProposeMatchInput): ProposeMatchO
     from: `gov_agent:${assessment.resource.rid}`,
     type: 'decision',
     content: {
-      text: assessment.decision.suggestedFirstMessage,
+      text: suggestedFirstMessage,
       resourceId: assessment.resource.rid,
       resourceName: assessment.resource.name,
-      reason: assessment.decision.reason,
-      score: assessment.decision.score,
-      missingInfo: assessment.decision.missingInfo,
+      reason,
+      score: decision.score,
+      missingInfo: decision.missingInfo ?? [],
       contactUrl: assessment.resource.contactUrl,
       targetUserId: assessment.broadcast.uid,
     },

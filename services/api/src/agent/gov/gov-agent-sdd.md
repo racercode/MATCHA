@@ -78,7 +78,7 @@ Gov Agent 最早只需要做到：
 
 本文件中 `skill` 統一指 **Markdown Skill**，也就是放在 `skills/<skill_name>/SKILL.md` 的能力說明文件。它不是 TypeScript function，也不是 MCP tool。
 
-Gov Agent 盡量不要直接在 agent prompt 或 pipeline 裡寫死資料存取邏輯。建議把所有「會碰外部世界」的能力都描述成 Markdown Skill，讓 Claude Managed Agent 依照 `SKILL.md` 的指引去呼叫 tool wrapper、API 或 MCP server。
+Gov Agent 盡量不要直接在 agent prompt 或 pipeline 裡寫死資料存取邏輯。建議把所有「會碰外部世界」的能力都描述成 Markdown Skill，並註冊成 Claude Managed Agent custom tools。Claude 依照 `SKILL.md` 的指引自行決定是否呼叫 custom tool；後端收到 custom tool event 後執行對應 tool wrapper。
 
 也就是：
 
@@ -92,22 +92,26 @@ Gov Agent 負責：
 Markdown Skill 負責：
 - 說明何時使用這個能力
 - 定義 input / output contract
-- 告訴 Agent 應該呼叫哪個 tool wrapper 或 MCP tool
+- 告訴 Agent 應該呼叫哪個 custom tool
 - 說明錯誤處理與注意事項
+
+Custom Tool 負責：
+- 讓 Claude Managed Agent 可以自主發出 tool call
+- 將 `agent.custom_tool_use` 交給後端處理
+- 等待後端回傳 `user.custom_tool_result`
 
 Tool Wrapper 負責：
 - 執行 TypeScript function
 - 讀 fake data / Firebase / Firestore
 - 建立 draft thread 或寫入 Firestore
-- 送 WebSocket / FCM 通知
-- 呼叫 MCP tool 或 RAG
+- 呼叫 RAG 或其他 backend capability
 ```
 
 這樣做的好處：
 
 - Agent 的推理邏輯和系統 I/O 分離
-- 之後要把 fake data 換成 Firebase，只要改 tool wrapper
-- 之後要把本地函式換成 MCP server，只要改 Markdown Skill 指向的 tool target
+- 之後要把 fake data 換成 Firebase，只要改 custom tool 背後的 tool wrapper
+- 之後要把 custom tool 換成 MCP server，可以保留 Markdown Skill 的語意與 input/output contract
 - 每個 tool wrapper 都可以獨立測試與除錯
 - Claude Managed Agent 可以專注在「何時呼叫哪個能力」與「如何解讀結果」
 
@@ -365,31 +369,29 @@ console.log(matches)
 
 ```txt
 runGovAgentPipeline
-  -> follow read_channel Markdown Skill
-  -> call readChannelToolWrapper
-  -> follow query_program_docs Markdown Skill
-  -> call queryProgramDocsToolWrapper
-  -> evaluateMatchWithClaude
-  -> parse MatchDecision JSON
-  -> filter by decision.score
-  -> follow propose_match Markdown Skill
-  -> call proposeMatchToolWrapper
+  -> channel update received
+  -> send channel update to Claude Managed Agent
+  -> agent follows uploaded Markdown Skills
+  -> agent calls custom tools when needed
+  -> backend handles agent.custom_tool_use
+  -> backend runs matching tool wrapper
+  -> backend returns user.custom_tool_result
+  -> agent final answer is match JSON or null
 ```
 
 每一步的責任要單純：
 
-- `read_channel` Markdown Skill：說明如何讀取 persona broadcasts，以及要呼叫哪個 tool wrapper
-- `readChannelToolWrapper`：實際回傳 persona broadcasts
-- `query_program_docs` Markdown Skill：說明如何查詢政府資源，以及要呼叫哪個 tool wrapper
-- `queryProgramDocsToolWrapper`：實際回傳本機關 resources
-- `evaluateMatchWithClaude`：把 persona 和 resource 交給 Claude Managed Agent 判斷
-- `parseMatchDecision`：把 Claude 文字回應轉成固定 JSON
-- `propose_match` Markdown Skill：說明何時建立 match thread，以及要呼叫哪個 tool wrapper
-- `proposeMatchToolWrapper`：實際建立 draft thread，之後可改成寫入 Firestore
+- `read_channel` Markdown Skill：說明何時呼叫 `read_channel` custom tool
+- `read_channel` custom tool：由 Claude 自主呼叫，後端執行 `readChannelToolWrapper`
+- `query_program_docs` Markdown Skill：說明何時呼叫 `query_program_docs` custom tool
+- `query_program_docs` custom tool：由 Claude 自主呼叫，後端執行 `queryProgramDocsToolWrapper`
+- `propose_match` Markdown Skill：說明何時呼叫 `propose_match` custom tool
+- `propose_match` custom tool：由 Claude 自主呼叫，後端執行 `proposeMatchToolWrapper`
+- Pipeline：負責喚醒 agent、處理 custom tool events、收集最後的 match JSON 或 `null`
 
 ### 6.2 Step 1：監聽 Persona 廣播
 
-MVP 先不要真的「監聽」。`read_channel` Markdown Skill 先指向 `readChannelToolWrapper`，由 tool wrapper 讀 fake data。之後 tool wrapper 可改成 Firebase Realtime DB，或由 Markdown Skill 改指向 MCP tool。
+MVP 先不要真的「監聽」。後端用 fake data 模擬 channel update，喚醒 Gov Agent。若 agent 需要更多 channel context，會自行呼叫 `read_channel` custom tool；後端收到後執行 `readChannelToolWrapper`。
 
 ```ts
 import type { ChannelBroadcast } from '@matcha/shared-types'
@@ -409,7 +411,7 @@ export async function readChannelToolWrapper(): Promise<ChannelBroadcast[]> {
 
 ### 6.3 Step 2：查詢本機關資源資料
 
-第一版先讓 `query_program_docs` Markdown Skill 指向 `queryProgramDocsToolWrapper`，由 tool wrapper 從 fake resources 裡面用 `agencyId` 篩選。
+第一版讓 `query_program_docs` Markdown Skill 指向 `query_program_docs` custom tool；後端收到 custom tool event 後，執行 `queryProgramDocsToolWrapper` 從 fake resources 裡面用 `agencyId` 篩選。
 
 ```ts
 import type { GovernmentResource } from '@matcha/shared-types'
@@ -526,21 +528,14 @@ JSON 格式：
 - Claude Managed Agents endpoint 屬於 beta，SDK 會依文件自動處理 beta header
 - 實作時不要每次都建立新的 agent / environment / session；應先讀 `general/governmentAgents.json` 重用既有資料，沒有才建立
 
-### 6.6 Step 5：呼叫 Claude 判斷媒合
+### 6.6 Step 5：Channel update 喚醒 Agent
 
 ```ts
-import Anthropic from '@anthropic-ai/sdk'
-import type { ChannelBroadcast, GovernmentResource } from '@matcha/shared-types'
-
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-})
-
-export async function evaluateMatchWithClaude(
+export async function runGovAgentForChannelUpdate(
   sessionId: string,
   broadcast: ChannelBroadcast,
-  resource: GovernmentResource,
-): Promise<MatchDecision> {
+  agencyId = 'taipei-youth-dept',
+): Promise<GovAgentPipelineResult | null> {
   const stream = await client.beta.sessions.events.stream(sessionId)
 
   await client.beta.sessions.events.send(sessionId, {
@@ -551,9 +546,14 @@ export async function evaluateMatchWithClaude(
           {
             type: 'text',
             text: JSON.stringify({
-              task: 'evaluate_government_resource_match',
-              personaBroadcast: broadcast,
-              governmentResource: resource,
+              task: 'channel_updated',
+              agencyId,
+              channelBroadcast: broadcast,
+              instructions: [
+                'Use custom tools when needed.',
+                'If no resource should respond, return null.',
+                'If a match should be proposed, call propose_match first.',
+              ],
             }),
           },
         ],
@@ -561,27 +561,31 @@ export async function evaluateMatchWithClaude(
     ],
   })
 
-  let output = ''
+  // Handle agent.custom_tool_use events:
+  // - read_channel -> readChannelToolWrapper
+  // - query_program_docs -> queryProgramDocsToolWrapper
+  // - propose_match -> proposeMatchToolWrapper
+  // Then send user.custom_tool_result back to the session.
 
-  for await (const event of stream) {
-    if (event.type === 'agent.message') {
-      for (const block of event.content) {
-        if ('text' in block) {
-          output += block.text
-        }
-      }
-    }
-
-    if (event.type === 'session.status_idle') {
-      break
-    }
-  }
-
-  return parseMatchDecision(output)
+  return matchResultOrNull
 }
 ```
 
-### 6.7 Step 6：解析 Claude JSON
+### 6.7 Step 6：處理 custom tool events
+
+Custom tool 執行流程：
+
+```txt
+Claude Managed Agent
+  -> agent.custom_tool_use(read_channel / query_program_docs / propose_match)
+Backend pipeline
+  -> execute matching tool wrapper
+  -> user.custom_tool_result
+Claude Managed Agent
+  -> final JSON or null
+```
+
+### 6.8 Step 7：解析 Claude JSON
 
 ```ts
 export function parseMatchDecision(rawText: string): MatchDecision {
@@ -681,24 +685,15 @@ export interface GovAgentPipelineResult {
 export async function runGovAgentPipeline(
   sessionId: string,
   broadcasts: ChannelBroadcast[],
-  resources: GovernmentResource[],
   threshold = 70,
 ): Promise<GovAgentPipelineResult[]> {
   const results: GovAgentPipelineResult[] = []
 
   for (const broadcast of broadcasts) {
-    for (const resource of resources) {
-      const decision = await evaluateMatchWithClaude(sessionId, broadcast, resource)
-      const assessment: MatchAssessment = { broadcast, resource, decision }
+    const result = await runGovAgentForChannelUpdate(sessionId, broadcast)
 
-      if (decision.eligible && decision.score >= threshold) {
-        const { thread, initialMessage } = proposeMatchToolWrapper(assessment)
-        results.push({
-          assessment,
-          thread,
-          initialMessage,
-        })
-      }
+    if (result && result.assessment.decision.score >= threshold) {
+      results.push(result)
     }
   }
 
@@ -706,11 +701,11 @@ export async function runGovAgentPipeline(
 }
 ```
 
-> 注意：上面範例使用 function 名稱示範。真正實作時，這些 function 是 tool wrapper，例如 `readChannelToolWrapper`、`queryProgramDocsToolWrapper`、`proposeMatchToolWrapper`。Markdown Skill 負責告訴 Agent 何時使用，以及要呼叫哪個 tool wrapper 或 MCP tool。
+> 注意：`runGovAgentPipeline` 不再預先列出所有 resource 組合；它只把 channel update 交給 Claude Managed Agent。Agent 依照 Markdown Skill 自己決定是否呼叫 `read_channel`、`query_program_docs`、`propose_match` custom tools。
 
 ### 6.10 Markdown Skill contract 設計
 
-每個 Markdown Skill 都要有固定 input/output，並明確說明要呼叫哪個 tool wrapper 或 MCP tool。
+每個 Markdown Skill 都要有固定 input/output，並明確說明要呼叫哪個 custom tool。
 
 #### `read_channel`
 
@@ -992,7 +987,7 @@ skills/notify_user/SKILL.md
 skills/escalate_to_caseworker/SKILL.md
 ```
 
-Markdown Skill 的責任是描述能力、input/output、該呼叫的 tool wrapper 或 MCP tool，以及錯誤處理規則。
+Markdown Skill 的責任是描述能力、input/output、該呼叫的 custom tool，以及錯誤處理規則。
 
 ### 7.5 `toolWrappers/`
 
@@ -1026,7 +1021,7 @@ services/
                         └── notifyUser.ts
 ```
 
-但黑客松 MVP 不需要一開始就寫 MCP server。先讓 Markdown Skill 指向 local tool wrapper。
+但黑客松 MVP 不需要一開始就寫 MCP server。先讓 Markdown Skill 指向 Claude Managed Agent custom tool，再由後端把 custom tool event 對應到 local tool wrapper。
 
 ### 7.7 `README.md`
 
@@ -1214,31 +1209,29 @@ threads where matchKey == "rid-design-intern-002:user-xiaoya-001"
 
 ## 10. Claude Managed Agent 設計重點
 
-第一版就使用 Claude Managed Agent，不使用 rule-based scoring。Pipeline 的責任是準備輸入、呼叫 session、解析 JSON，建立 thread 與 initial message；真正的 eligibility 與媒合理由交給 `claude-haiku-4-5`。
+第一版就使用 Claude Managed Agent，不使用 rule-based scoring。Pipeline 的責任是把 channel update 送進 session、處理 custom tool events，並接收 Agent 最終回傳的 match result 或 `null`；真正的 eligibility、工具使用順序與是否回應交給 `claude-haiku-4-5`。
 
 整體流程：
 
 ```txt
-read_channel
-  -> query_program_docs(resource.rid)
-  -> evaluateMatchWithClaude(sessionId, broadcast, resource)
-  -> Claude 判斷 eligibility
-  -> Claude 產生推薦理由與缺漏資訊
-  -> parse MatchDecision JSON
-  -> propose_match
-  -> write AgentThread + initial ThreadMessage
+channel update
+  -> backend wakes Gov Agent session
+  -> Claude decides whether to call read_channel
+  -> Claude decides whether to call query_program_docs
+  -> Claude evaluates eligibility and fit
+  -> if no response: final answer null
+  -> if response: Claude calls propose_match
+  -> backend writes/returns AgentThread + initial ThreadMessage
   -> User Agent reads ThreadMessage and notifies user
 ```
 
-Claude prompt 必須要求固定 JSON：
+Claude 最終回應必須是 `null` 或固定 JSON：
 
 ```json
 {
-  "eligible": true,
-  "score": 87,
-  "reason": "使用者對品牌設計與實習有明確需求，符合本計畫服務對象。",
-  "missingInfo": ["是否可投入至少兩個月實習"],
-  "suggestedFirstMessage": "我找到一個可能適合你的資源：創意產業實習媒合計畫。它和你提到的品牌設計與實習探索方向高度相關。"
+  "respond": true,
+  "thread": {},
+  "initialMessage": {}
 }
 ```
 

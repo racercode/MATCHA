@@ -1,6 +1,6 @@
 # Gov Agent
 
-政府資源媒合 Agent，由 Claude Managed Agent 驅動。讀取 persona 廣播、評估媒合資格，建立 draft thread 與第一則 `ThreadMessage`。
+政府資源媒合 Agent，由 Claude Managed Agent 驅動。後端在 channel 更新時喚醒 Gov Agent；Agent 依照上傳的 Markdown Skills 自主呼叫 custom tools 讀資料、查資源、決定是否建立 draft thread 與第一則 `ThreadMessage`。
 
 ## 前置需求
 
@@ -69,8 +69,10 @@ npm run gov:run
 執行後會：
 1. 載入 3 筆假 persona 廣播和 3 筆假政府資源
 2. 讀取 `general/governmentAgents.json`，重用或建立 Claude Managed Agent session（claude-haiku-4-5）
-3. 對所有 9 組廣播 x 資源組合進行媒合評估
-4. 印出 `eligible === true` 且 `score >= 70` 的媒合結果，包含 `AgentThread` 與 initial `ThreadMessage`
+3. 建立/更新 agent 時上傳 Markdown Skills，並註冊 custom tools
+4. 對每筆 channel update 喚醒 Gov Agent
+5. Agent 自主呼叫 `read_channel`、`query_program_docs`、`propose_match`
+6. Agent 回傳 match 結果或 `null`
 
 預期輸出：Claude 至少應該配對到：
 - 小雅 → 創意產業實習媒合計畫（score >= 70）
@@ -79,11 +81,13 @@ npm run gov:run
 
 ## 核心概念
 
-**Markdown Skills** 是 Agent 能力說明層。`skill` 一詞只指 `skills/*/SKILL.md`，用來描述使用時機、input/output，以及要呼叫哪個 tool wrapper 或 MCP tool。
+**Markdown Skills** 是上傳給 Claude Managed Agent 的能力說明層。`skill` 一詞只指 `skills/*/SKILL.md`，用來描述使用時機、input/output，以及要呼叫哪個 custom tool。
 
-**Tool Wrappers** 是 TypeScript 執行層。目前讀假資料，之後改接 Firebase、MCP 或外部 API 時，pipeline 不用改。
+**Custom Tools** 是 Claude Managed Agent 可自主呼叫的工具介面。Agent 呼叫 custom tool 時，後端收到 `agent.custom_tool_use` event，執行對應 tool wrapper，再用 `user.custom_tool_result` 回傳結果。
 
-**Pipeline** 負責串接 tool wrappers 和 Claude，本身不碰任何資料庫或通知系統。
+**Tool Wrappers** 是 TypeScript 執行層。目前讀假資料，之後改接 Firebase、MCP 或外部 API 時，custom tool schema 不用改。
+
+**Pipeline** 負責在 channel 更新時喚醒 Gov Agent，處理 custom tool events，並接收 Agent 最終回傳的 match result 或 `null`。
 
 **ThreadMessage** 是交給 User Agent 的內容來源。Gov Agent 建立媒合後不直接通知使用者，而是產生 initial `ThreadMessage`；後續由 User Agent 讀取 message，整理成通知或 App 內摘要給使用者。
 

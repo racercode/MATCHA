@@ -23,18 +23,18 @@ interface NotifyUserOutput {
 
 ## Tool Call
 
-Call the future `notifyUserToolWrapper` tool wrapper.
+Call the future `notify_user` custom tool.
 
 Current implementation:
 
 ```txt
-not implemented in Phase 1
+not implemented in Phase 1; notification is delegated to User Agent
 ```
 
 Future implementation:
 
 ```txt
-notifyUserToolWrapper -> WebSocket match_notify, then FCM fallback
+notify_user custom tool -> backend -> notifyUserToolWrapper -> WebSocket match_notify, then FCM fallback
 ```
 
 ## Notes

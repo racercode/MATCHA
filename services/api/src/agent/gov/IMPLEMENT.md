@@ -30,13 +30,17 @@ Phase 1 實作最小可行的 Gov Agent 媒合 pipeline：假資料 + Claude Man
 
 ### Markdown Skills（`skills/*/SKILL.md`）
 
-`skill` 統一指 Markdown Skill，用來描述能力的使用時機、input/output，以及要呼叫哪個 tool wrapper：
+`skill` 統一指 Markdown Skill，用來描述能力的使用時機、input/output，以及要呼叫哪個 custom tool：
 
-| Markdown Skill | 檔案 | 指向的 tool wrapper |
+| Markdown Skill | 檔案 | 指向的 custom tool |
 |----------------|------|---------------------|
-| `read_channel` | `skills/read_channel/SKILL.md` | `readChannelToolWrapper` |
-| `query_program_docs` | `skills/query_program_docs/SKILL.md` | `queryProgramDocsToolWrapper` |
-| `propose_match` | `skills/propose_match/SKILL.md` | `proposeMatchToolWrapper` |
+| `read_channel` | `skills/read_channel/SKILL.md` | `read_channel` |
+| `query_program_docs` | `skills/query_program_docs/SKILL.md` | `query_program_docs` |
+| `propose_match` | `skills/propose_match/SKILL.md` | `propose_match` |
+
+### Custom Tools（Managed Agent）
+
+建立/更新 Gov Agent 時會註冊 custom tools。Claude Managed Agent 可自行呼叫這些 tools；後端負責接 `agent.custom_tool_use` event、執行對應 tool wrapper，並送回 `user.custom_tool_result`。
 
 ### Tool Wrappers（`toolWrappers/`）
 
@@ -53,7 +57,9 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 - 初始化 Anthropic client
 - 讀取 `services/api/src/agent/general/governmentAgents.json`
 - 重用既有 Claude Managed Agent / environment / session
-- 若 registry 沒有資料，才建立 Claude Managed Agent，使用 `claude-haiku-4-5`，system prompt 要求只回傳 JSON
+- 若 registry 沒有資料，才建立 Claude Managed Agent，使用 `claude-haiku-4-5`
+- 上傳 Markdown Skills，並將 skill IDs 掛到 agent
+- 註冊 `read_channel`、`query_program_docs`、`propose_match` custom tools
 - 建立或重用 environment 和 session
 - 匯出 `initGovManagedAgentSession()`，回傳 `sessionId`
 
@@ -71,16 +77,17 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 ### Pipeline（`pipeline.ts`）
 
 - `parseMatchDecision(rawText)` — 驗證並解析 Claude 的 JSON 回應，自動清除 markdown code fence
-- `evaluateMatchWithClaude(sessionId, broadcast, resource)` — 把媒合任務送進 Claude session，收集串流回應
-- `runGovAgentPipeline(sessionId, broadcasts, resources, threshold?)` — 跑所有 broadcast x resource 組合，篩選 `eligible === true && score >= threshold`（預設 70），對通過的配對建立 thread 與 initial message
+- `runGovAgentForChannelUpdate(sessionId, broadcast, agencyId?)` — channel 更新時喚醒 Gov Agent，讓 Agent 自主使用 custom tools，最後回傳 match result 或 `null`
+- `runGovAgentPipeline(sessionId, broadcasts, resources, threshold?)` — 對每筆 channel update 呼叫 Gov Agent，收集有回應的結果
 
 ### 測試進入點（`main.ts`）
 
 執行腳本，流程：
-1. 透過 tool wrappers 載入假廣播和假資源
+1. 透過 `readChannelToolWrapper` 載入假廣播
 2. 從 registry 重用或初始化 Claude Managed Agent session
-3. 跑完整 pipeline
-4. 印出可讀的結果和完整 JSON，包含 `AgentThread` 與 initial `ThreadMessage`
+3. 對每筆 channel update 喚醒 Gov Agent
+4. Agent 自主呼叫 custom tools
+5. 印出可讀的結果和完整 JSON，包含 `AgentThread` 與 initial `ThreadMessage`
 
 ### 單元測試（`pipeline.test.ts`）
 
@@ -95,12 +102,14 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 ```
 main.ts（進入點）
   → readChannelToolWrapper()            // 假資料
-  → queryProgramDocsToolWrapper()       // 假資料
   → initGovManagedAgentSession()
   → runGovAgentPipeline()
-       → evaluateMatchWithClaude()    // Claude Managed Agent
-       → parseMatchDecision()         // JSON 驗證
-       → proposeMatchToolWrapper()    // 建立 draft thread + initial ThreadMessage
+       → runGovAgentForChannelUpdate()
+          → Claude Managed Agent decides whether to call custom tools
+          → agent.custom_tool_use(read_channel / query_program_docs / propose_match)
+          → backend executes tool wrapper
+          → user.custom_tool_result
+          → final JSON or null
 ```
 
 ## User Agent 通知責任

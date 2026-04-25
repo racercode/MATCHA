@@ -1,3 +1,8 @@
+---
+name: propose_match
+description: Create a draft match thread and initial message for an eligible match
+---
+
 # propose_match
 
 Use this skill when Claude has decided that a persona broadcast and government resource should become a `gov_user` match.
@@ -21,18 +26,18 @@ interface ProposeMatchOutput {
 
 ## Tool Call
 
-Call the `proposeMatchToolWrapper` tool wrapper.
+Call the `propose_match` custom tool.
 
 Current implementation:
 
 ```txt
-proposeMatchToolWrapper -> create deterministic draft AgentThread + initial ThreadMessage
+propose_match custom tool -> backend -> proposeMatchToolWrapper -> create deterministic draft AgentThread + initial ThreadMessage
 ```
 
 Future implementation:
 
 ```txt
-proposeMatchToolWrapper -> Firestore threads + thread_messages, or MCP tool
+propose_match custom tool -> backend -> proposeMatchToolWrapper -> Firestore threads + thread_messages
 ```
 
 ## Notes

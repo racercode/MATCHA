@@ -23,7 +23,7 @@ interface EscalateToCaseworkerOutput {
 
 ## Tool Call
 
-Call the future `escalateToCaseworkerToolWrapper` tool wrapper.
+Call the future `escalate_to_caseworker` custom tool.
 
 Current implementation:
 
@@ -34,7 +34,7 @@ not implemented in Phase 1
 Future implementation:
 
 ```txt
-escalateToCaseworkerToolWrapper -> Firestore thread update + gov dashboard notification
+escalate_to_caseworker custom tool -> backend -> escalateToCaseworkerToolWrapper -> Firestore thread update + gov dashboard notification
 ```
 
 ## Notes

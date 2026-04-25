@@ -1,3 +1,8 @@
+---
+name: read_channel
+description: Read recent persona broadcasts from the central channel
+---
+
 # read_channel
 
 Use this skill when Gov Agent needs to read recent persona broadcasts from the central channel.
@@ -21,18 +26,18 @@ interface ReadChannelOutput {
 
 ## Tool Call
 
-Call the `readChannelToolWrapper` tool wrapper.
+Call the `read_channel` custom tool.
 
 Current implementation:
 
 ```txt
-readChannelToolWrapper -> fakeData.ts
+read_channel custom tool -> backend -> readChannelToolWrapper -> fakeData.ts
 ```
 
 Future implementation:
 
 ```txt
-readChannelToolWrapper -> Firebase Realtime DB or MCP tool
+read_channel custom tool -> backend -> readChannelToolWrapper -> Firebase Realtime DB
 ```
 
 ## Notes

@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -20,6 +20,8 @@ export interface GovernmentAgentRecord {
   agencyName: string
   agentId?: string
   environmentId?: string
+  skillIds?: string[]
+  configVersion?: string
   model: string
   sessions: ManagedAgentSessionRecord[]
   createdAt: number
@@ -42,11 +44,19 @@ interface RegistryFile<T> {
 }
 
 async function readRegistry<T>(filePath: string): Promise<RegistryFile<T>> {
-  const raw = await readFile(filePath, 'utf8')
-  return JSON.parse(raw) as RegistryFile<T>
+  try {
+    const raw = await readFile(filePath, 'utf8')
+    return JSON.parse(raw) as RegistryFile<T>
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { agents: [] }
+    }
+    throw err
+  }
 }
 
 async function writeRegistry<T>(filePath: string, registry: RegistryFile<T>): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true })
   await writeFile(filePath, `${JSON.stringify(registry, null, 2)}\n`, 'utf8')
 }
 

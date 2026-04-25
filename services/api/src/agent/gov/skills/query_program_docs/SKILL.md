@@ -1,3 +1,8 @@
+---
+name: query_program_docs
+description: Query government resource documents for an agency
+---
+
 # query_program_docs
 
 Use this skill when Gov Agent needs government resource data before evaluating a match.
@@ -21,18 +26,18 @@ interface QueryProgramDocsOutput {
 
 ## Tool Call
 
-Call the `queryProgramDocsToolWrapper` tool wrapper.
+Call the `query_program_docs` custom tool.
 
 Current implementation:
 
 ```txt
-queryProgramDocsToolWrapper -> fakeData.ts
+query_program_docs custom tool -> backend -> queryProgramDocsToolWrapper -> fakeData.ts
 ```
 
 Future implementation:
 
 ```txt
-queryProgramDocsToolWrapper -> Firestore, RAG, or MCP tool
+query_program_docs custom tool -> backend -> queryProgramDocsToolWrapper -> Firestore or RAG
 ```
 
 ## Notes
