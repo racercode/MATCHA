@@ -376,6 +376,7 @@ POST   /gov/resources/:rid/pdf            上傳 PDF（multipart/form-data）
                                            → GovAgent 的 query_resource_pdf 即可讀取
 GET    /gov/dashboard                      媒合統計（媒合數、matchScore 分佈、開話率）
 GET    /gov/dashboard/agents              目前 resource agent 數量
+GET    /gov/dashboard/users              市民（persona）數量
 GET    /gov/dashboard/stats               全域媒合統計（總次數、成功次數、成功率）
 GET    /gov/dashboard/stats/:resourceId   單一 resource 媒合統計
 ```

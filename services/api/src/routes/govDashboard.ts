@@ -2,6 +2,7 @@ import { Router, type Router as IRouter } from 'express'
 import { verifyToken, requireGovStaff } from '../middleware/auth.js'
 import { getAllMatchStats, getMatchStats } from '../lib/matchStatsRepo.js'
 import { listGovernmentResources } from '../lib/govResourcesRepo.js'
+import { db } from '../lib/firebase.js'
 
 const router: IRouter = Router()
 
@@ -22,6 +23,25 @@ router.get('/gov/dashboard/agents', async (_req, res) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : '讀取資源失敗',
+      data: null,
+    })
+  }
+})
+
+// GET /gov/dashboard/users — number of user personas (citizens who have interacted)
+router.get('/gov/dashboard/users', async (_req, res) => {
+  try {
+    const snap = await db.collection('personas').count().get()
+    const userCount = snap.data().count
+
+    res.json({
+      success: true,
+      data: { userCount },
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : '讀取使用者數量失敗',
       data: null,
     })
   }

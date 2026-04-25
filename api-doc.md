@@ -641,6 +641,22 @@ gov_agent_runs/{messageId}
 
 ---
 
+### ✅ `GET /gov/dashboard/users`
+
+目前系統中的市民（persona）數量。
+
+**Response `200`**
+```json
+{
+  "success": true,
+  "data": {
+    "userCount": 42
+  }
+}
+```
+
+---
+
 ### ✅ `GET /gov/dashboard/stats`
 
 全部 Resource Agent 的媒合統計（包含每個 resource 的細項）。
@@ -1039,6 +1055,7 @@ type ServerEvent =
 | ✅ | `POST /gov/channel-replies/:replyId/open` | `services/api/src/routes/gov.ts` | 建立或回傳既有 HumanThread |
 | ✅ | `GET /gov/dashboard` | `services/api/src/routes/gov.ts` | 支援 `since` |
 | ✅ | `GET /gov/dashboard/agents` | `services/api/src/routes/govDashboard.ts` | 目前 resource agent 數量 |
+| ✅ | `GET /gov/dashboard/users` | `services/api/src/routes/govDashboard.ts` | 市民 persona 數量 |
 | ✅ | `GET /gov/dashboard/stats` | `services/api/src/routes/govDashboard.ts` | 全域媒合統計 |
 | ✅ | `GET /gov/dashboard/stats/:resourceId` | `services/api/src/routes/govDashboard.ts` | 單一 resource 媒合統計 |
 | ✅ | `GET /gov/human-threads` | `services/api/src/routes/gov.ts` | gov staff 視角 |
