@@ -8,38 +8,11 @@ import {
   personas,
   govStaff,
   findGovStaffUidByGovId,
-  type PeerMessage,
-  type HumanMessage,
 } from '../lib/store.js'
+import type { ThreadMessage } from '@matcha/shared-types'
+import { clients, userRoles, userGovIds, broadcast, type ServerEvent } from './push.js'
 
-// ── Types from api-doc §9 ─────────────────────────────────────────────────────
-
-type ServerEvent =
-  | { type: 'agent_reply'; content: string; done: boolean }
-  | { type: 'peer_message'; message: PeerMessage }
-  | { type: 'human_message'; message: HumanMessage }
-  | { type: 'error'; code: string; message: string }
-
-// ── Connection registry ───────────────────────────────────────────────────────
-
-// uid → set of open sockets (one user may have multiple tabs)
-const clients = new Map<string, Set<WebSocket>>()
-
-// uid → role
-const userRoles = new Map<string, 'citizen' | 'gov_staff'>()
-// uid → govId (for gov_staff only)
-const userGovIds = new Map<string, string>()
-
-// ── Broadcast helpers ─────────────────────────────────────────────────────────
-
-export function broadcast(uid: string, event: ServerEvent) {
-  const sockets = clients.get(uid)
-  if (!sockets) return
-  const payload = JSON.stringify(event)
-  for (const ws of sockets) {
-    if (ws.readyState === WebSocket.OPEN) ws.send(payload)
-  }
-}
+export { broadcast }
 
 function sendToSocket(ws: WebSocket, event: ServerEvent) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event))
@@ -104,22 +77,30 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         return
       }
 
-      const message: PeerMessage = {
-        mid: `pm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      const now = Date.now()
+      const storeMsg = {
+        mid: `pm-${now}-${Math.random().toString(36).slice(2, 6)}`,
         from: `user:${uid}`,
         content,
-        createdAt: Date.now(),
+        createdAt: now,
       }
 
       if (!peerMessages.has(threadId)) peerMessages.set(threadId, [])
-      peerMessages.get(threadId)!.push(message)
+      peerMessages.get(threadId)!.push(storeMsg)
 
-      // Update thread updatedAt
-      thread.updatedAt = message.createdAt
+      thread.updatedAt = storeMsg.createdAt
 
-      // Push to both participants
-      broadcast(thread.userAId, { type: 'peer_message', message })
-      broadcast(thread.userBId, { type: 'peer_message', message })
+      const message: ThreadMessage = {
+        mid: storeMsg.mid,
+        tid: threadId,
+        from: `human:${uid}`,
+        type: 'answer',
+        content: { text: content },
+        createdAt: now,
+      }
+
+      broadcast(thread.userAId, { type: 'thread_message', message })
+      broadcast(thread.userBId, { type: 'thread_message', message })
       break
     }
 
@@ -148,24 +129,32 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         return
       }
 
-      const from = role === 'citizen' ? `user:${uid}` : `gov_staff:${uid}`
-      const message: HumanMessage = {
-        mid: `hm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        from,
+      const now = Date.now()
+      const storeFrom = role === 'citizen' ? `user:${uid}` : `gov_staff:${uid}`
+      const storeMsg = {
+        mid: `hm-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        from: storeFrom,
         content,
-        createdAt: Date.now(),
+        createdAt: now,
       }
 
       if (!humanMessages.has(threadId)) humanMessages.set(threadId, [])
-      humanMessages.get(threadId)!.push(message)
+      humanMessages.get(threadId)!.push(storeMsg)
 
-      thread.updatedAt = message.createdAt
+      thread.updatedAt = storeMsg.createdAt
 
-      // Push to citizen
-      broadcast(thread.userId, { type: 'human_message', message })
-      // Push to gov_staff (look up uid by govId)
+      const message: ThreadMessage = {
+        mid: storeMsg.mid,
+        tid: threadId,
+        from: `human:${uid}`,
+        type: 'answer',
+        content: { text: content },
+        createdAt: now,
+      }
+
+      broadcast(thread.userId, { type: 'thread_message', message })
       const govStaffUid = findGovStaffUidByGovId(thread.govId)
-      if (govStaffUid) broadcast(govStaffUid, { type: 'human_message', message })
+      if (govStaffUid) broadcast(govStaffUid, { type: 'thread_message', message })
       break
     }
 

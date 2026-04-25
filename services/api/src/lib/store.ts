@@ -4,6 +4,8 @@ export interface UserPersona {
   uid: string
   displayName: string
   summary: string
+  needs: string[]
+  offers: string[]
   updatedAt: number
 }
 
@@ -139,6 +141,8 @@ personas.set('uid-abc', {
   uid: 'uid-abc',
   displayName: '陳小明',
   summary: '正在尋找就業輔導和職業培訓資源的年輕人，目前無穩定收入',
+  needs: ['就業輔導', '職業培訓'],
+  offers: ['軟體開發經驗'],
   updatedAt: NOW - 3_600_000,
 })
 
@@ -146,6 +150,8 @@ personas.set('uid-xyz', {
   uid: 'uid-xyz',
   displayName: '林小華',
   summary: '對社會企業有興趣的青年，正在尋找同伴',
+  needs: ['創業夥伴', '資金連結'],
+  offers: ['社區志工經驗', '政策研究'],
   updatedAt: NOW - 3_600_000,
 })
 
