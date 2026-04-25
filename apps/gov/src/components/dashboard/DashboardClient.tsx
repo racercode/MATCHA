@@ -83,7 +83,7 @@ export default function DashboardClient({ initialStats }: { initialStats: Dashbo
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
             <StatCard label="AI 推薦總次數" value={stats?.totalReplies ?? '—'} sub="累計媒合回覆" />
             <StatCard label="已開啟真人對話" value={stats?.openedConversations ?? '—'} sub={stats ? `共 ${stats.totalReplies} 筆推薦` : undefined} />
-            <StatCard label="對話轉換率" value={stats ? `${(stats.openRate * 100).toFixed(1)}%` : '—'} sub="推薦 → 開啟對話" />
+            <StatCard label="真人對話率" value={stats ? `${(stats.openRate * 100).toFixed(1)}%` : '—'} sub="推薦 → 開啟對話" />
             <StatCard label="服務資源數" value={agents?.agentCount ?? '—'} sub="上線中的 AI 資源" />
             <StatCard label="服務人次" value={users?.userCount ?? '—'} sub="建立 persona 的市民" />
             <StatCard label="AI 評估次數" value={matchStats?.totalAttempts ?? '—'} sub="所有資源合計" />
