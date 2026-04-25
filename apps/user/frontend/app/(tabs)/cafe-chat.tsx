@@ -6,6 +6,7 @@ import type { PeerPreview, Timestamp } from '@matcha/shared-types';
 import { toMs } from '@matcha/shared-types';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import NotificationBell from '@/components/NotificationBell';
 import { useAuth } from '@/containers/hooks/useAuth';
 import { auth } from '@/lib/firebase';
 import { API_BASE_URL } from '@/lib/api';
@@ -110,9 +111,12 @@ export default function CafeChatScreen() {
 
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: top + 18 }]} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <ThemedText type="title" style={styles.title}>
-            Coffee Chat
-          </ThemedText>
+          <View style={styles.headerTopRow}>
+            <ThemedText type="title" style={styles.title}>
+              Coffee Chat
+            </ThemedText>
+            <NotificationBell />
+          </View>
           <ThemedText style={styles.subtitle}>
             對未來還沒有想法嗎？沒關係～{'\n'}
             讓你的agent代替你去認識相似的人，{'\n'}
@@ -177,9 +181,17 @@ const styles = StyleSheet.create({
     gap: 4,
     marginBottom: 18,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   title: {
-    fontSize: 34,
-    lineHeight: 40,
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: '800',
+    color: '#18365A',
+    letterSpacing: -0.5,
   },
   subtitle: {
     color: '#7A7A7A',

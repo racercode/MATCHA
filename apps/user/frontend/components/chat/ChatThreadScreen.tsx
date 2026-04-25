@@ -19,6 +19,7 @@ import type { ClientEvent, PeerMessage, ServerEvent, SwipeCard, Timestamp } from
 import { msToTimestamp, toMs } from '@matcha/shared-types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Loading from '@/components/Loading';
+import NotificationBell from '@/components/NotificationBell';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/containers/hooks/useAuth';
@@ -758,7 +759,25 @@ export default function ChatThreadScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <Stack.Screen options={{ title: mode === 'peer' ? (peerName ?? '對話紀錄') : 'Chat', headerBackTitle: 'Back' }} />
+      <Stack.Screen
+        options={{
+          title: mode === 'peer' ? (peerName ?? '對話紀錄') : 'Chat',
+          headerBackTitle: 'Back',
+          headerTitleStyle: {
+            fontSize: 22,
+            fontWeight: '800',
+            color: '#18365A',
+          },
+          headerStyle: {
+            backgroundColor: '#FFFFFF',
+          },
+          headerShadowVisible: false,
+          headerRightContainerStyle: {
+            paddingRight: 8,
+          },
+          headerRight: mode === 'persona' ? () => <NotificationBell /> : undefined,
+        }}
+      />
       <ThemedView style={styles.container}>
         <KeyboardAvoidingView
           style={styles.flex}

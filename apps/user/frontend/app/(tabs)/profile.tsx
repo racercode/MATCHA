@@ -108,12 +108,8 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: bottom + 100, paddingTop: top }]}>
-          <View style={styles.topBanner}>
-            <Pressable style={styles.settingsButton} onPress={() => router.push('/settings')}>
-              <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
-              <ThemedText style={styles.settingsButtonText}>Settings</ThemedText>
-            </Pressable>
-          </View>
+          <View style={styles.topBanner} />
+
 
           <View style={styles.headerContent}>
             <View style={styles.avatarContainer}>
@@ -205,6 +201,12 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
         ) : null}
+
+        {/* Settings 固定在右上角 */}
+        <Pressable style={[styles.settingsButton, { top: top + 12 }]} onPress={() => router.push('/settings')}>
+          <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
+          <ThemedText style={styles.settingsButtonText}>Settings</ThemedText>
+        </Pressable>
       </ThemedView>
     </>
   );
@@ -221,10 +223,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 40,
   },
+
   settingsButton: {
     position: 'absolute',
     top: 16,
-    right: 20,
+    right: 16,
     minHeight: 40,
     borderRadius: 999,
     backgroundColor: 'rgba(23, 59, 99, 0.18)',
@@ -232,6 +235,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    zIndex: 20,
   },
   settingsButtonText: {
     fontSize: 14,

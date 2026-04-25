@@ -22,7 +22,7 @@ const router: IRouter = Router()
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 
 export const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
-export const DEFAULT_THRESHOLD = 70
+export const DEFAULT_THRESHOLD = 30
 
 export type ChannelMessageInput = Partial<ChannelMessage> & { publishedAtMs?: number }
 

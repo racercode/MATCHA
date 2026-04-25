@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/containers/hooks/useColorScheme';
 import { AuthProvider } from '@/containers/hooks/useAuth';
+import { NotificationsProvider } from '@/containers/hooks/useNotifications';
 import '@/global.css';
 
 SplashScreen.preventAutoHideAsync();
@@ -26,36 +27,39 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="settings"
-              options={{
-                headerShown: false,
-              }}
-            />
-            <Stack.Screen
-              name="thread/[tid]"
-              options={{
-                presentation: 'card',
-                title: 'Chat',
-                headerBackTitle: 'Back',
-              }}
-            />
-            <Stack.Screen
-              name="human-thread/[tid]"
-              options={{
-                presentation: 'card',
-                title: 'Staff Chat',
-                headerBackTitle: 'Back',
-              }}
-            />
-            <Stack.Screen name="signin" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
-          <StatusBar style="auto" />
-        </ThemeProvider>
+        <NotificationsProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="settings"
+                options={{
+                  headerShown: false,
+                }}
+              />
+              <Stack.Screen
+                name="thread/[tid]"
+                options={{
+                  presentation: 'card',
+                  title: 'Chat',
+                  headerBackTitle: 'Back',
+                }}
+              />
+              <Stack.Screen
+                name="human-thread/[tid]"
+                options={{
+                  presentation: 'card',
+                  title: 'Staff Chat',
+                  headerBackTitle: 'Back',
+                }}
+              />
+              <Stack.Screen name="notifications" options={{ presentation: 'card', headerShown: false }} />
+              <Stack.Screen name="signin" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+            <StatusBar style="auto" />
+          </ThemeProvider>
+        </NotificationsProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );

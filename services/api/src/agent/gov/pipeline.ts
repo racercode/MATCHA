@@ -153,7 +153,7 @@ export async function runGovAgentForChannelUpdate(
   sessionId: string,
   channelMessage: ChannelMessage,
   context: GovToolRuntimeContext & { resource?: GovernmentResource; resourceName?: string },
-  threshold = 10,
+  threshold = 30,
 ): Promise<GovAgentPipelineResult | null> {
   const stream = await client.beta.sessions.events.stream(sessionId)
 
@@ -171,10 +171,11 @@ export async function runGovAgentForChannelUpdate(
                 'Use read_channel if you need recent channel context.',
                 'Use query_resource_document to inspect the single government resource and document text bound to this resource agent.',
                 'Evaluate only this bound resource. Do not ask for or propose another resource.',
-                'If this resource should not respond, final answer must be null.',
-                `Only return a match decision when eligible is true and score is at least ${threshold}.`,
+                '永遠回傳 MatchDecision JSON，不要回傳 null。即使完全無關也回傳 score 0 並說明原因。',
+                '採取寬鬆媒合策略：只要資源的主題與使用者需求相關，即使部分 eligibilityCriteria 可能不符合，仍應給予合理分數。',
+                '將使用者可能不符合的資格條件列入 missingInfo，並在 reason 中提醒使用者注意。',
                 'Do not write data or call write_channel_reply. The backend pipeline will create and persist ChannelReply after receiving your decision.',
-                'If a match should be proposed, final answer must be a JSON MatchDecision: {"eligible":true,"score":0-100,"reason":"...","missingInfo":[]}.',
+                'Final answer must be a JSON MatchDecision: {"eligible":true/false,"score":0-100,"reason":"推薦理由或不相關原因","missingInfo":["未符合條件1"]}.',
               ],
               agencyId: context.agencyId,
               resourceId: context.resourceId,
@@ -264,7 +265,7 @@ export async function runGovAgentForChannelUpdate(
 export async function runGovAgentPipeline(
   resourceAgents: Array<{ sessionId: string; resource: GovernmentResource }>,
   messages: ChannelMessage[],
-  threshold = 70,
+  threshold = 30,
 ): Promise<GovAgentPipelineResult[]> {
   const results: GovAgentPipelineResult[] = []
 

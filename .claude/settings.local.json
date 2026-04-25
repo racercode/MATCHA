@@ -31,7 +31,8 @@
       "Bash(pnpm --filter api add -D @types/pdf-parse)",
       "Bash(xargs ls *)",
       "Bash(pnpm --filter api exec tsc --noEmit)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\" && cat \"{}\"')"
     ]
   }
 }
