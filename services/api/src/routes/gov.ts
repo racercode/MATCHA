@@ -16,11 +16,13 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 export const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 export const DEFAULT_THRESHOLD = 70
 
+export type ChannelMessageInput = Partial<ChannelMessage> & { publishedAtMs?: number }
+
 export interface RunGovAgentRequestBody {
   agencyId?: string
   resourceId?: string
-  message?: Partial<ChannelMessage>
-  broadcast?: Partial<ChannelMessage>
+  message?: ChannelMessageInput
+  broadcast?: ChannelMessageInput
   threshold?: number
 }
 
@@ -71,8 +73,7 @@ export function selectResources(agencyId: string, resourceId?: string): AgentGov
 
 export function serializeGovAgentResult(result: GovAgentPipelineResult) {
   return {
-    thread: result.thread,
-    initialMessage: result.initialMessage,
+    reply: result.reply,
     reason: result.assessment.decision.reason,
     missingInfo: result.assessment.decision.missingInfo,
     assessment: result.assessment,

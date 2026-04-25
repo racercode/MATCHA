@@ -37,7 +37,7 @@ read_channel custom tool -> backend -> readChannelToolWrapper -> fakeData.ts
 Future implementation:
 
 ```txt
-read_channel custom tool -> backend -> readChannelToolWrapper -> Firebase Realtime DB
+read_channel custom tool -> backend -> readChannelToolWrapper -> Firestore channel_messages
 ```
 
 ## Notes

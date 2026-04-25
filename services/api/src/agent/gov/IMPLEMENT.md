@@ -8,9 +8,9 @@ Phase 1 實作最小可行的 Gov Agent 媒合 pipeline：假資料 + Claude Man
 
 ### 型別定義（`types.ts`）
 
-- `MatchDecision` — Claude 的結構化媒合判斷（eligible、score、reason、missingInfo、suggestedFirstMessage）
+- `MatchDecision` — Claude 的結構化媒合判斷（eligible、score、reason、missingInfo）
 - `MatchAssessment` — 將一組 channel message + resource + decision 綁在一起
-- `GovAgentPipelineResult` — pipeline 最終輸出（assessment + thread + initialMessage）
+- `GovAgentPipelineResult` — pipeline 最終輸出（assessment + reply）
 
 ### 假資料（`fakeData.ts`）
 
@@ -35,8 +35,8 @@ Phase 1 實作最小可行的 Gov Agent 媒合 pipeline：假資料 + Claude Man
 | Markdown Skill | 檔案 | 指向的 custom tool |
 |----------------|------|---------------------|
 | `read_channel` | `skills/read_channel/SKILL.md` | `read_channel` |
-| `query_program_docs` | `skills/query_program_docs/SKILL.md` | `query_program_docs` |
-| `propose_match` | `skills/propose_match/SKILL.md` | `propose_match` |
+| `query_resource_pdf` | `skills/query_resource_pdf/SKILL.md` | `query_resource_pdf` |
+| `write_channel_reply` | `skills/write_channel_reply/SKILL.md` | `write_channel_reply` |
 
 ### Custom Tools（Managed Agent）
 
@@ -49,8 +49,8 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 | Tool wrapper | 檔案 | 說明 |
 |--------------|------|------|
 | `readChannelToolWrapper` | `toolWrappers/readChannel.ts` | 回傳 channel messages（支援 `since` 和 `limit` 篩選） |
-| `queryProgramDocsToolWrapper` | `toolWrappers/queryProgramDocs.ts` | 依 runtime `agencyId/resourceId` context 只回傳此 Resource Agent 綁定的資源 |
-| `proposeMatchToolWrapper` | `toolWrappers/proposeMatch.ts` | 根據 `MatchAssessment` 建立 draft `AgentThread` 與 initial `ThreadMessage` |
+| `queryResourcePdfToolWrapper` | `toolWrappers/queryResourcePdf.ts` | 依 runtime `agencyId/resourceId` context 只回傳此 Resource Agent 綁定的資源 |
+| `writeChannelReplyToolWrapper` | `toolWrappers/writeChannelReply.ts` | 根據 `MatchAssessment` 建立 `ChannelReply` |
 
 ### Managed Agent（`managedAgent.ts`）
 
@@ -59,7 +59,7 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 - 依 `resourceId` 重用既有 Claude Managed Agent / environment / session
 - 若 registry 沒有該資源的資料，才建立 Claude Managed Agent，使用 `claude-haiku-4-5`
 - 上傳 Markdown Skills，並將 skill IDs 掛到 agent
-- 註冊 `read_channel`、`query_program_docs`、`propose_match` custom tools
+- 註冊 `read_channel`、`query_resource_pdf`、`write_channel_reply` custom tools
 - 建立或重用 environment 和 session
 - 匯出 `initGovManagedAgentSession()`，回傳 `sessionId`
 
@@ -87,15 +87,15 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 2. 從 registry 依每個 resource 重用或初始化 Claude Managed Agent session
 3. 對每筆 channel update 逐一喚醒 Resource Agent
 4. Agent 自主呼叫 custom tools
-5. 印出可讀的結果和完整 JSON，包含 `AgentThread` 與 initial `ThreadMessage`
+5. 印出可讀的結果和完整 JSON，包含 `ChannelReply`
 
 ### 單元測試（`pipeline.test.ts`）
 
 4 個 suite、19 個測試，涵蓋：
 - `parseMatchDecision` — 合法 JSON、markdown fence 清除、所有驗證錯誤情境
 - `readChannelToolWrapper` — 無篩選、since 篩選、limit 限制
-- `queryProgramDocsToolWrapper` — runtime context resource scoping、未知 context、忽略 agent input 裡的 resourceId
-- `proposeMatchToolWrapper` — thread / initial message 資料結構、deterministic tid / mid
+- `queryResourcePdfToolWrapper` — runtime context resource scoping、未知 context、忽略 agent input 裡的 resourceId
+- `writeChannelReplyToolWrapper` — reply 資料結構、deterministic replyId
 
 ## 架構流程
 
@@ -106,28 +106,28 @@ main.ts（進入點）
   → runGovAgentPipeline()
        → runGovAgentForChannelUpdate()
           → Claude Managed Agent decides whether to call custom tools
-          → agent.custom_tool_use(read_channel / query_program_docs / propose_match)
+          → agent.custom_tool_use(read_channel / query_resource_pdf / write_channel_reply)
           → backend executes tool wrapper
           → user.custom_tool_result
           → final JSON or null
 ```
 
-## User Agent 通知責任
+## Match Inbox polling 責任
 
-Gov Agent 不直接把媒合通知轉給使用者。Phase 1 的 `proposeMatchToolWrapper` 會產生 initial `ThreadMessage`，未來寫入 database 後，由 User Agent 讀取該 message，整理成使用者通知或 App 內摘要。
+Gov Agent 不直接把媒合通知轉給使用者。Phase 1 的 `writeChannelReplyToolWrapper` 會產生 `ChannelReply`，未來寫入 database 後，由市民端 Match Inbox 和 Gov Dashboard 透過 HTTP polling 讀取。
 
 ```txt
-Gov Agent -> AgentThread + ThreadMessage -> database
-User Agent -> read ThreadMessage -> notify citizen
+Gov Agent -> ChannelReply -> channel_replies
+Citizen app -> GET /me/channel-replies
+Gov dashboard -> GET /gov/channel-replies
 ```
 
 ## 尚未實作（後續階段）
 
 - Firebase / Firestore 讀寫
-- User Agent 讀取 `ThreadMessage` 並轉成使用者通知
+- Firestore `channel_replies` 寫入
 - `POST /gov/agent/run` API endpoint
-- `notify_user` Markdown Skill + `notifyUserToolWrapper`
 - `escalate_to_caseworker` Markdown Skill + `escalateToCaseworkerToolWrapper`
 - MCP server 整合
 - Session 持久化（Redis）
-- 重複媒合防護（目前只靠 deterministic `tid`）
+- 重複媒合防護（目前只靠 deterministic `replyId`）

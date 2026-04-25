@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const GOV_AGENT_MODEL = 'claude-haiku-4-5'
-const GOV_AGENT_CONFIG_VERSION = 'gov-resource-tools-v4'
+const GOV_AGENT_CONFIG_VERSION = 'gov-channel-reply-tools-v1'
 const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 const DEFAULT_AGENCY_NAME = '臺北市青年局'
 const DEFAULT_SESSION_KEY = 'default'
@@ -38,18 +38,17 @@ const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
 2. 如果資格條件缺少關鍵資訊，請填入 missingInfo。
 3. score 必須是 0 到 100 的整數。
 4. 只有明顯值得主動推薦時 eligible 才能是 true。
-5. 需要資料時，自己呼叫 read_channel、query_program_docs、propose_match custom tools。
-6. query_program_docs 只會回傳你這個 resource agent 被授權看到的單一政府資源。
+5. 需要資料時，自己呼叫 read_channel、query_resource_pdf、write_channel_reply custom tools。
+6. query_resource_pdf 只會回傳你這個 resource agent 被授權看到的單一政府資源。
 7. 不要嘗試查詢或媒合其他 resourceId。
 8. 如果不需要回應，最後只回傳 null。
-9. 如果需要回應，請先呼叫 propose_match，最後只回傳 propose_match 的結果 JSON。
+9. 如果需要回應，請先呼叫 write_channel_reply，最後只回傳 write_channel_reply 的結果 JSON。
 10. 最終回應只能是 JSON 或 null，不要使用 markdown，不要加解釋文字。
 
 回應 JSON 格式：
 {
   "respond": true,
-  "thread": {},
-  "initialMessage": {}
+  "reply": {}
 }`
 
 const GOV_CUSTOM_TOOLS = [
@@ -66,7 +65,7 @@ const GOV_CUSTOM_TOOLS = [
     },
   },
   {
-    name: 'query_program_docs',
+    name: 'query_resource_pdf',
     type: 'custom' as const,
     description: 'Query the single government resource bound to this resource agent. Use before evaluating eligibility or fit.',
     input_schema: {
@@ -77,9 +76,9 @@ const GOV_CUSTOM_TOOLS = [
     },
   },
   {
-    name: 'propose_match',
+    name: 'write_channel_reply',
     type: 'custom' as const,
-    description: 'Create a draft gov_user AgentThread and initial ThreadMessage after deciding the match is eligible and score is high enough.',
+    description: 'Write a ChannelReply after deciding the bound government resource should respond to a channel message.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -97,9 +96,8 @@ const GOV_CUSTOM_TOOLS = [
                 score: { type: 'number', description: 'Match score from 0 to 100.' },
                 reason: { type: 'string', description: 'Why this match is or is not suitable.' },
                 missingInfo: { type: 'array', items: { type: 'string' }, description: 'Information still needed from the user.' },
-                suggestedFirstMessage: { type: 'string', description: 'A suggested first message to send to the user in Traditional Chinese.' },
               },
-              required: ['eligible', 'score', 'reason', 'suggestedFirstMessage'],
+              required: ['eligible', 'score', 'reason', 'missingInfo'],
             },
           },
           required: ['channelMessage', 'resource', 'decision'],
@@ -142,8 +140,8 @@ async function createGovSkills(): Promise<string[]> {
   const existing = await findExistingSkills()
   return Promise.all([
     createGovSkill('read_channel', existing),
-    createGovSkill('query_program_docs', existing),
-    createGovSkill('propose_match', existing),
+    createGovSkill('query_resource_pdf', existing),
+    createGovSkill('write_channel_reply', existing),
   ])
 }
 
