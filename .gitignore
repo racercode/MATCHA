@@ -1,1 +1,28 @@
 node_modules/
+
+# Local env / Expo
+.env
+.env.*
+!.env.example
+!.env.sample
+.expo/
+dist/
+build/
+
+# Logs / caches
+*.log
+.DS_Store
+
+# Common binary / app build artifacts
+*.apk
+*.aab
+*.ipa
+*.app
+*.dmg
+*.exe
+*.msi
+*.bin
+*.out
+
+# Ignore archived prototype project
+apps/user/wvs_project50/
