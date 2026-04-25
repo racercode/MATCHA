@@ -1,26 +1,33 @@
 import { Router, type Router as IRouter } from 'express'
 import multer from 'multer'
-import type { ChannelMessage, GovernmentResource as AgentGovernmentResource } from '@matcha/shared-types'
+import type { ChannelMessage, ChannelReply as FirestoreChannelReply, GovernmentResource as AgentGovernmentResource } from '@matcha/shared-types'
 import { verifyToken, requireGovStaff, type AuthedRequest } from '../middleware/auth.js'
 import { fakeChannelMessages, fakeGovernmentResources } from '../agent/gov/fakeData.js'
 import { initGovManagedAgentSession } from '../agent/gov/managedAgent.js'
 import { runGovAgentPipeline } from '../agent/gov/pipeline.js'
 import type { GovAgentPipelineResult } from '../agent/gov/types.js'
+import { hasFirebaseAdminEnv } from '../lib/firebaseEnv.js'
 import { channelMessages, channelReplies, humanThreads, humanMessages, govResources, getCitizenInfo } from '../lib/store.js'
 
 const router: IRouter = Router()
-router.use(verifyToken, requireGovStaff)
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 
 export const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 export const DEFAULT_THRESHOLD = 70
 
+export type ChannelMessageInput = Partial<ChannelMessage> & { publishedAtMs?: number }
+
 export interface RunGovAgentRequestBody {
   agencyId?: string
   resourceId?: string
-  message?: Partial<ChannelMessage>
-  broadcast?: Partial<ChannelMessage>
+  message?: ChannelMessageInput
+  broadcast?: ChannelMessageInput
+  threshold?: number
+}
+
+export interface RunGovAgentForMessageRequestBody {
+  messageId?: string
   threshold?: number
 }
 
@@ -47,11 +54,17 @@ export function normalizeChannelMessage(input: RunGovAgentRequestBody['message']
     return null
   }
 
+  const publishedAt =
+    input.publishedAt ??
+    (typeof (input as Record<string, unknown>).publishedAtMs === 'number'
+      ? (input as Record<string, unknown>).publishedAtMs as number
+      : Date.now())
+
   return {
     msgId: input.msgId,
     uid: input.uid,
     summary: input.summary,
-    publishedAt: typeof input.publishedAt === 'number' ? input.publishedAt : Date.now(),
+    publishedAt,
   }
 }
 
@@ -69,6 +82,88 @@ export function serializeGovAgentResult(result: GovAgentPipelineResult) {
     reason: result.assessment.decision.reason,
     missingInfo: result.assessment.decision.missingInfo,
     assessment: result.assessment,
+  }
+}
+
+// POST /gov/agent/run-message
+// Internal trigger target: Firebase trigger posts messageId, backend reads Firestore and runs all resource agents.
+router.post('/gov/agent/run-message', async (req, res) => {
+  const body = (req.body ?? {}) as RunGovAgentForMessageRequestBody
+  const threshold = typeof body.threshold === 'number' ? body.threshold : DEFAULT_THRESHOLD
+
+  if (typeof body.messageId !== 'string' || !body.messageId.trim()) {
+    res.status(400).json({ success: false, error: 'messageId 必須是非空字串', data: null })
+    return
+  }
+
+  if (body.threshold !== undefined && typeof body.threshold !== 'number') {
+    res.status(400).json({ success: false, error: 'threshold 必須是 0 到 100 的整數', data: null })
+    return
+  }
+
+  if (!Number.isInteger(threshold) || threshold < 0 || threshold > 100) {
+    res.status(400).json({ success: false, error: 'threshold 必須是 0 到 100 的整數', data: null })
+    return
+  }
+
+  if (!hasFirebaseAdminEnv()) {
+    res.status(500).json({ success: false, error: 'Firebase Admin env 尚未設定，無法讀取 Firestore trigger message', data: null })
+    return
+  }
+
+  try {
+    const { handleGovAgentRunForMessage } = await import('../agent/gov/channelMessageTrigger.js')
+    const result = await handleGovAgentRunForMessage(body.messageId.trim(), { threshold })
+
+    if (!result.ok) {
+      res.status(result.status).json({ success: false, error: result.error, data: null })
+      return
+    }
+
+    if (result.skipped) {
+      res.json({
+        success: true,
+        data: {
+          messageId: result.messageId,
+          skipped: true,
+          status: result.status,
+        },
+      })
+      return
+    }
+
+    res.json({
+      success: true,
+      data: {
+        messageId: result.messageId,
+        skipped: false,
+        resourceCount: result.resourceCount,
+        matchCount: result.matchCount,
+        threshold,
+        matches: result.matches.map(serializeGovAgentResult),
+      },
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Gov Agent message trigger 執行失敗',
+      data: null,
+    })
+  }
+})
+
+router.use(verifyToken, requireGovStaff)
+
+function serializeGovChannelReply(reply: FirestoreChannelReply, citizenUid = '') {
+  return {
+    replyId: reply.replyId,
+    messageId: reply.messageId,
+    govId: reply.govId,
+    content: reply.content,
+    matchScore: reply.matchScore,
+    createdAt: reply.createdAt,
+    citizen: getCitizenInfo(citizenUid),
+    humanThreadOpened: false,
   }
 }
 
@@ -119,11 +214,32 @@ export function buildGovAgentRunPlan(
 }
 
 // GET /gov/channel-replies
-router.get('/gov/channel-replies', (req, res) => {
+router.get('/gov/channel-replies', async (req, res) => {
   const { govId } = req as unknown as AuthedRequest
   const since = Number(req.query.since) || 0
   const minScore = Number(req.query.minScore) || 0
   const limit = Math.min(Number(req.query.limit) || 20, 100)
+
+  if (hasFirebaseAdminEnv()) {
+    try {
+      const { listChannelRepliesForGov } = await import('../lib/channelRepliesRepo.js')
+      const replies = await listChannelRepliesForGov(govId ?? '', { since, minScore, limit: limit + 1 })
+      res.json({
+        success: true,
+        data: {
+          items: replies.slice(0, limit).map(reply => serializeGovChannelReply(reply)),
+          hasMore: replies.length > limit,
+        },
+      })
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : '讀取 Firestore channel replies 失敗',
+        data: null,
+      })
+    }
+    return
+  }
 
   // Build msgId → citizenUid map
   const msgToUid = new Map<string, string>()

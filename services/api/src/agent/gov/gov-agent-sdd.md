@@ -67,7 +67,6 @@ Gov Agent 最早只需要做到：
 等這四件事能跑，再接：
 
 - `write_channel_reply`
-- Match Inbox polling handoff
 - `reply_if_asked`
 - `summarize_thread`
 
@@ -793,22 +792,6 @@ write_channel_reply skill -> writeChannelReplyToolWrapper -> create deterministi
 write_channel_reply skill -> writeChannelReplyToolWrapper -> Firestore channel_replies
 ```
 
-#### Match Inbox polling
-
-Gov Agent 不需要 `notify_user` skill。新版產品流裡，配對通知與新 thread discovery 都靠 HTTP polling。
-
-市民端：
-
-```txt
-GET /me/channel-replies
-```
-
-政府端：
-
-```txt
-GET /gov/channel-replies
-```
-
 #### `escalate_to_caseworker`
 
 用途：資格不明、需要人工判斷、或使用者問題超出 Agent 能力時，交給政府承辦人。
@@ -1076,11 +1059,36 @@ Request body 建議支援：
 
 需要做：
 
-1. 把 `ChannelReply` 寫到 Firestore `channel_replies`
-2. `ChannelReply` 要包含 `messageId`、`govId`、`content`、`matchScore`、`createdAt`
-3. `GET /me/channel-replies` 可以查到這筆 reply
-4. `GET /gov/channel-replies` 可以查到這筆 reply
-5. Gov Agent 不建立 `human_threads`；真人承辦人按「開啟對話」時才由 API 建立
+1. 建立 `services/api/src/lib/firebase.ts`
+   - 使用 `FIREBASE_PROJECT_ID`
+   - 使用 `FIREBASE_CLIENT_EMAIL`
+   - 使用 `FIREBASE_PRIVATE_KEY`
+   - 初始化 `firebase-admin`
+   - export `db`
+2. 建立 `services/api/src/lib/channelRepliesRepo.ts`
+   - `upsertChannelReply(reply)`
+   - `listChannelRepliesForGov(govId, { since, minScore, limit })`
+   - `listChannelRepliesForUser(uid, { since, limit })`
+3. Gov Agent 只負責判斷 match，不負責寫資料庫
+   - Agent 最後回傳 `MatchDecision` JSON 或 `null`
+   - 不要求 Agent 呼叫 `write_channel_reply`
+   - 不讓 Agent 直接決定資料庫副作用
+4. 後端 pipeline 收到 Agent reply 後才建立並寫入 `ChannelReply`
+   - `runGovAgentForChannelUpdate()` 收到 `MatchDecision`
+   - 後端組出 `MatchAssessment`
+   - 後端用 `buildChannelReplyFromAssessment(assessment)` 建立 deterministic `ChannelReply`
+   - 分數達 threshold 後，由 `runGovAgentPipeline()` 呼叫 `upsertChannelReply(reply)`
+   - 沒有 Firebase Admin env 時寫回 in-memory `channelReplies`
+5. `GET /me/channel-replies` 改成優先讀 Firestore
+   - 用 bearer token 解析出的 `uid`
+   - 先查 `channel_messages where uid == uid`
+   - 再用 `messageId` 查 `channel_replies`
+   - 沒 Firebase Admin env 時沿用 in-memory fallback
+6. `GET /gov/channel-replies` 改成優先讀 Firestore
+   - 用 bearer token 找出政府帳號對應的 `govId`
+   - 查 `channel_replies where govId == govId`
+   - 沒 Firebase Admin env 時沿用 in-memory fallback
+7. Gov Agent 不建立 `human_threads`；真人承辦人按「開啟對話」時才由 API 建立
 
 建議內容：
 
@@ -1091,42 +1099,127 @@ Request body 建議支援：
   govId: resource.rid,
   content: assessment.decision.reason,
   matchScore: assessment.decision.score,
-  createdAt: Date.now(),
+  createdAt: nowTimestamp(),
 }
 ```
 
-### Phase 4：接 Firestore channel_messages
-
-目標：Persona Agent 更新 persona 後，Gov Agent 能讀到真實廣播。
-
-把：
-
-```ts
-readChannel(): ChannelMessage[]
-```
-
-改成：
-
-```ts
-readChannel(): Promise<ChannelMessage[]>
-```
-
-然後從 Firestore `channel_messages` 讀資料。
-
-### Phase 5：接 Match Inbox polling
-
-目標：市民端與政府端用 HTTP polling 發現新媒合，不由 Gov Agent 直接送通知。
-
-Gov Agent 不直接送 `match_notify`：
+Phase 3 完成後的資料流：
 
 ```txt
-Gov Agent writes ChannelReply
-Citizen app polls GET /me/channel-replies
-Gov dashboard polls GET /gov/channel-replies
-Gov staff opens HumanThread only after manual decision
+channel update
+-> backend calls Gov Agent
+-> Agent returns MatchDecision JSON
+-> backend validates threshold
+-> backend builds ChannelReply
+-> backend upserts ChannelReply
+-> Firestore channel_replies
+-> GET /me/channel-replies
+-> GET /gov/channel-replies
 ```
 
-WebSocket 只用於真人或 Coffee chat 的即時訊息，不用於新媒合通知。
+這樣比讓 Agent 直接呼叫寫入工具更穩，因為：
+
+- Agent 只做判斷，不掌控資料庫副作用
+- 後端可以統一做 threshold、idempotency、retry、log
+- Agent 回傳格式異常時，後端可以擋下來不寫髒資料
+- 未來要改 Firestore transaction 或去重策略時，不需要改 Agent skill 語意
+
+測試建議：
+
+```powershell
+cd C:\YTP_Hackthon\MATCHA\services\api
+npx tsx --test "src/lib/channelRepliesRepo.test.ts"
+```
+
+如果想在 Firebase Console 手動確認測試資料，可以暫時保留測試資料：
+
+```powershell
+$env:KEEP_FIRESTORE_TEST_DATA="true"
+npx tsx --test "src/lib/channelRepliesRepo.test.ts"
+Remove-Item Env:KEEP_FIRESTORE_TEST_DATA
+```
+
+### Phase 4：接 trigger API，依 messageId 跑所有 Resource Agents
+
+目標：Firebase trigger 由其他人負責，Gov backend 提供一支 API 接收 `messageId`，然後自己從 Firestore 讀 `channel_messages/{messageId}` 與 `gov_resources`，再叫所有 Resource Agent 判斷是否 match。
+
+新增 API：
+
+```txt
+POST /gov/agent/run-message
+```
+
+Request body：
+
+```json
+{
+  "messageId": "msg-channel-xiaoya-001",
+  "threshold": 70
+}
+```
+
+這支 API 第一版不加額外 internal auth。Firebase trigger 那邊只要在 `channel_messages/{messageId}` onCreate 後 POST 這支 API。
+
+Phase 4 資料流：
+
+```txt
+Persona Agent writes channel_messages/{messageId}
+-> Firebase trigger onCreate
+-> POST /gov/agent/run-message { messageId }
+-> Gov backend reads channel_messages/{messageId}
+-> Gov backend reads Firestore gov_resources
+-> Gov backend starts/reuses one Resource Agent per gov resource
+-> runGovAgentPipeline(resourceAgents, [message])
+-> backend persists channel_replies
+-> /me/channel-replies and /gov/channel-replies can read matches
+```
+
+需要做：
+
+1. 建立 `services/api/src/lib/channelMessagesRepo.ts`
+   - `getChannelMessageById(messageId)`
+   - `listRecentChannelMessages({ since, limit })`
+2. 建立 `services/api/src/lib/govResourcesRepo.ts`
+   - `listGovernmentResources()`
+   - 從 Firestore `gov_resources` 讀正式資源，不再用 fake resources 跑 trigger flow
+3. 建立 `services/api/src/lib/govAgentRunsRepo.ts`
+   - `tryStartGovAgentRun(messageId)`
+   - `completeGovAgentRun(messageId, { resourceCount, matchCount })`
+   - `failGovAgentRun(messageId, error)`
+4. 建立 `services/api/src/agent/gov/channelMessageTrigger.ts`
+   - `handleGovAgentRunForMessage(messageId, { threshold })`
+   - 讀 message
+   - 讀 resources
+   - 初始化每個 Resource Agent session
+   - 呼叫 `runGovAgentPipeline`
+5. 在 `services/api/src/routes/gov.ts` 新增 `POST /gov/agent/run-message`
+   - 驗證 `messageId` 是非空字串
+   - 驗證 `threshold` 是 0–100 整數
+   - 呼叫 `handleGovAgentRunForMessage`
+   - 回傳 `resourceCount`、`matchCount`、`matches`
+
+Idempotency：
+
+使用 Firestore collection：
+
+```txt
+gov_agent_runs/{messageId}
+```
+
+用途是避免同一筆 channel message 被重複處理。Firebase trigger 可能 retry，也可能有人手動重打 API，所以流程要先檢查 run record：
+
+```txt
+收到 messageId
+-> tryStartGovAgentRun(messageId)
+-> 如果 status 是 running/completed，直接 skipped
+-> 如果沒有紀錄或上次 failed，建立/覆蓋為 running
+-> pipeline 成功後標記 completed
+-> pipeline 失敗後標記 failed
+```
+
+`read_channel` 的定位：
+
+`read_channel` 不是 trigger 入口。新訊息會由後端直接讀出並餵給 Agent。`read_channel` 只保留作為可選上下文工具，讓 Agent 需要時讀最近 channel messages。
 
 ## 9. 避免重複媒合
 
@@ -1424,6 +1517,7 @@ Gov Agent 不直接負責通知使用者；它只負責產生可被 Match Inbox 
 - 市民端 `GET /me/channel-replies` 看得到
 - 政府端 `GET /gov/channel-replies` 看得到
 - Gov Agent 不建立 `human_threads`
+- 沒有 Firebase Admin env 時，demo 仍可使用 in-memory fake store fallback
 
 ## 13. 建議今天先做的最小任務
 

@@ -9,13 +9,12 @@ export interface WriteChannelReplyOutput {
   reply: ChannelReply
 }
 
-export function writeChannelReplyToolWrapper(input: WriteChannelReplyInput): WriteChannelReplyOutput {
-  const { assessment } = input
+export function buildChannelReplyFromAssessment(assessment: MatchAssessment): ChannelReply {
   const now = Date.now()
   const decision = assessment.decision as MatchAssessment['decision'] & { reasoning?: string }
   const reason = decision.reason ?? decision.reasoning ?? ''
 
-  const reply: ChannelReply = {
+  return {
     replyId: `reply-gov-${assessment.resource.rid}-${assessment.channelMessage.msgId}`,
     messageId: assessment.channelMessage.msgId,
     govId: assessment.resource.rid,
@@ -23,6 +22,9 @@ export function writeChannelReplyToolWrapper(input: WriteChannelReplyInput): Wri
     matchScore: decision.score,
     createdAt: now,
   }
+}
 
+export async function writeChannelReplyToolWrapper(input: WriteChannelReplyInput): Promise<WriteChannelReplyOutput> {
+  const reply = buildChannelReplyFromAssessment(input.assessment)
   return { reply }
 }

@@ -4,5 +4,5 @@ export type { ReadChannelInput, ReadChannelOutput } from './readChannel.js'
 export { queryResourcePdfToolWrapper } from './queryResourcePdf.js'
 export type { GovToolRuntimeContext, QueryResourcePdfInput, QueryResourcePdfOutput } from './queryResourcePdf.js'
 
-export { writeChannelReplyToolWrapper } from './writeChannelReply.js'
+export { buildChannelReplyFromAssessment, writeChannelReplyToolWrapper } from './writeChannelReply.js'
 export type { WriteChannelReplyInput, WriteChannelReplyOutput } from './writeChannelReply.js'

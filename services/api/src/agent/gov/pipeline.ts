@@ -1,11 +1,14 @@
 import type { ChannelMessage, GovernmentResource } from '@matcha/shared-types'
 import { client } from './managedAgent.js'
 import {
+  buildChannelReplyFromAssessment,
   queryResourcePdfToolWrapper,
   readChannelToolWrapper,
   writeChannelReplyToolWrapper,
 } from './toolWrappers/index.js'
 import type { GovToolRuntimeContext } from './toolWrappers/index.js'
+import { hasFirebaseAdminEnv } from '../../lib/firebaseEnv.js'
+import { channelReplies } from '../../lib/store.js'
 import type { MatchDecision, MatchAssessment, GovAgentPipelineResult } from './types.js'
 
 export function parseMatchDecision(rawText: string): MatchDecision {
@@ -55,28 +58,59 @@ async function executeGovCustomTool(
   }
 }
 
-function parseGovAgentFinalResponse(rawText: string): GovAgentPipelineResult | null {
+function parseGovAgentFinalResponse(
+  rawText: string,
+  assessmentBase: Pick<MatchAssessment, 'channelMessage' | 'resource'>,
+): GovAgentPipelineResult | null {
   const cleaned = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
   if (!cleaned || cleaned === 'null') return null
 
   try {
-    const parsed = JSON.parse(cleaned) as Partial<GovAgentPipelineResult> & { respond?: boolean }
+    const parsed = JSON.parse(cleaned) as Partial<GovAgentPipelineResult> & MatchDecision & { respond?: boolean; decision?: MatchDecision }
     if (parsed.respond === false) return null
-    if (!parsed.assessment || !parsed.reply) return null
+    if (parsed.assessment && parsed.reply) {
+      return {
+        assessment: parsed.assessment,
+        reply: parsed.reply,
+      }
+    }
+
+    const decision = parsed.decision ?? parsed
+    if (typeof decision.eligible !== 'boolean') return null
+    if (!Number.isInteger(decision.score) || decision.score < 0 || decision.score > 100) return null
+    if (typeof decision.reason !== 'string') return null
+    if (!Array.isArray(decision.missingInfo)) return null
+
+    const assessment: MatchAssessment = {
+      ...assessmentBase,
+      decision,
+    }
 
     return {
-      assessment: parsed.assessment,
-      reply: parsed.reply,
+      assessment,
+      reply: buildChannelReplyFromAssessment(assessment),
     }
   } catch {
     return null
   }
 }
 
+async function persistChannelReply(result: GovAgentPipelineResult): Promise<void> {
+  if (hasFirebaseAdminEnv()) {
+    const { upsertChannelReply } = await import('../../lib/channelRepliesRepo.js')
+    await upsertChannelReply(result.reply)
+  } else {
+    channelReplies.set(result.reply.replyId, {
+      ...result.reply,
+      createdAt: result.reply.createdAt,
+    })
+  }
+}
+
 export async function runGovAgentForChannelUpdate(
   sessionId: string,
   channelMessage: ChannelMessage,
-  context: GovToolRuntimeContext & { resourceName?: string },
+  context: GovToolRuntimeContext & { resource?: GovernmentResource; resourceName?: string },
   threshold = 70,
 ): Promise<GovAgentPipelineResult | null> {
   const stream = await client.beta.sessions.events.stream(sessionId)
@@ -96,8 +130,9 @@ export async function runGovAgentForChannelUpdate(
                 'Use query_resource_pdf to inspect the single government resource bound to this resource agent.',
                 'Evaluate only this bound resource. Do not ask for or propose another resource.',
                 'If this resource should not respond, final answer must be null.',
-                `Only call write_channel_reply when eligible is true and score is at least ${threshold}.`,
-                'If a match should be proposed, call write_channel_reply first, then final answer must be the write_channel_reply result JSON.',
+                `Only return a match decision when eligible is true and score is at least ${threshold}.`,
+                'Do not write data or call write_channel_reply. The backend pipeline will create and persist ChannelReply after receiving your decision.',
+                'If a match should be proposed, final answer must be a JSON MatchDecision: {"eligible":true,"score":0-100,"reason":"...","missingInfo":[]}.',
               ],
               agencyId: context.agencyId,
               resourceId: context.resourceId,
@@ -170,7 +205,18 @@ export async function runGovAgentForChannelUpdate(
     console.log(`  [agent output] ${output.slice(0, 300)}`)
   }
 
-  return channelReplyResult ?? parseGovAgentFinalResponse(output)
+  return channelReplyResult ?? parseGovAgentFinalResponse(output, {
+    channelMessage,
+    resource: context.resource ?? {
+      rid: context.resourceId,
+      agencyId: context.agencyId,
+      agencyName: context.agencyId,
+      name: context.resourceName ?? context.resourceId,
+      description: '',
+      eligibilityCriteria: [],
+      createdAt: channelMessage.publishedAt,
+    },
+  })
 }
 
 export async function runGovAgentPipeline(
@@ -191,6 +237,7 @@ export async function runGovAgentPipeline(
         {
           agencyId: resource.agencyId,
           resourceId: resource.rid,
+          resource,
           resourceName: resource.name,
         },
         threshold,
@@ -201,8 +248,9 @@ export async function runGovAgentPipeline(
       } else if ((result.assessment.decision?.score ?? 0) < threshold) {
         console.log(`  -> Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
       } else {
+        await persistChannelReply(result)
         results.push(result)
-        console.log(`  -> Channel reply created: ${result.reply.replyId}`)
+        console.log(`  -> Channel reply persisted: ${result.reply.replyId}`)
       }
     }
   }
