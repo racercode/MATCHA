@@ -40,7 +40,7 @@ matcha/
 
 `pnpm-workspace.yaml` 已在 monorepo 根目錄定義，直接 `pnpm install` 即可。
 
-## WebSocket 整合（Day 2）
+## WebSocket
 
 在 `ThreadDetailClient.tsx` 加入 WebSocket 連線，監聽 `ServerEvent` 更新 `messages` state：
 
