@@ -221,6 +221,66 @@ export function buildGovAgentRunPlan(
   }
 }
 
+// GET /gov/channel-messages — channel feed with citizen broadcasts and agent replies
+router.get('/gov/channel-messages', async (req, res) => {
+  const { govId } = req as unknown as AuthedRequest
+  const limit = Math.min(Number(req.query.limit) || 30, 100)
+
+  const [msgsSnap, repliesSnap, threadsSnap] = await Promise.all([
+    db.collection('channel_messages').orderBy('publishedAt', 'desc').limit(limit).get(),
+    db.collection('channel_replies').where('govId', '==', govId).get(),
+    db.collection('human_threads').where('govId', '==', govId).get(),
+  ])
+
+  const messages = msgsSnap.docs.map(d => ({
+    msgId: d.id,
+    uid: String(d.data().uid ?? ''),
+    summary: String(d.data().summary ?? ''),
+    publishedAt: toMs(d.data().publishedAt ?? d.data().createdAt ?? { seconds: 0, nanoseconds: 0 }),
+  }))
+
+  const citizenUids = [...new Set(messages.map(m => m.uid).filter(Boolean))]
+  const personaMap = new Map<string, { displayName: string }>()
+  await Promise.all(citizenUids.map(async uid => {
+    const doc = await db.collection('personas').doc(uid).get()
+    if (doc.exists) personaMap.set(uid, { displayName: String(doc.data()!.displayName ?? uid) })
+  }))
+
+  const openedReplies = new Map<string, string>()
+  for (const doc of threadsSnap.docs) {
+    openedReplies.set(String(doc.data().channelReplyId), doc.id)
+  }
+
+  const replyByMsg = new Map<string, unknown[]>()
+  for (const doc of repliesSnap.docs) {
+    const r = doc.data()
+    const msgId = String(r.messageId)
+    if (!replyByMsg.has(msgId)) replyByMsg.set(msgId, [])
+    const tid = openedReplies.get(doc.id) ?? null
+    replyByMsg.get(msgId)!.push({
+      replyId: doc.id,
+      govId: r.govId,
+      content: r.content,
+      matchScore: r.matchScore,
+      createdAt: toMs(r.createdAt ?? { seconds: 0, nanoseconds: 0 }),
+      humanThreadOpened: openedReplies.has(doc.id),
+      humanThreadId: tid,
+    })
+  }
+
+  const items = messages.map(m => ({
+    msgId: m.msgId,
+    uid: m.uid,
+    summary: m.summary,
+    publishedAt: m.publishedAt,
+    citizen: { uid: m.uid, displayName: personaMap.get(m.uid)?.displayName ?? m.uid },
+    replies: ((replyByMsg.get(m.msgId) ?? []) as { matchScore: number }[])
+      .sort((a, b) => b.matchScore - a.matchScore),
+  }))
+
+  res.json({ success: true, data: { items } })
+})
+
 // GET /gov/channel-replies
 router.get('/gov/channel-replies', async (req, res) => {
   const { govId } = req as unknown as AuthedRequest
