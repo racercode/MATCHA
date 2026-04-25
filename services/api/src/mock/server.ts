@@ -265,7 +265,7 @@ export function startMockServer(port = 3001) {
 
         if (msg.type === 'persona_message') {
           // Simulate streaming PersonaAgent reply
-          const reply: ServerEvent = { type: 'agent_reply', content: '（mock）收到你的訊息，正在思考中...', done: false }
+          const reply: ServerEvent = { type: 'agent_reply', content: '我好想你...', done: false }
           socket.send(JSON.stringify(reply))
           setTimeout(() => {
             const done: ServerEvent = { type: 'agent_reply', content: '', done: true }
