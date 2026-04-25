@@ -3,8 +3,8 @@ import multer from 'multer'
 import { msToTimestamp, nowTimestamp, toMs, type ChannelMessage, type ChannelReply as FirestoreChannelReply, type GovernmentResource as AgentGovernmentResource } from '@matcha/shared-types'
 import { verifyToken, requireGovStaff, type AuthedRequest } from '../middleware/auth.js'
 import { fakeChannelMessages, fakeGovernmentResources } from '../agent/gov/fakeData.js'
-import { initGovManagedAgentSession } from '../agent/gov/managedAgent.js'
-import { runGovAgentPipeline } from '../agent/gov/pipeline.js'
+import { initGovManagedAgentSession, initGovFollowUpSession } from '../agent/gov/managedAgent.js'
+import { runGovAgentPipeline, runGovFollowUpQuestion } from '../agent/gov/pipeline.js'
 import type { GovAgentPipelineResult } from '../agent/gov/types.js'
 import { hasFirebaseAdminEnv } from '../lib/firebaseEnv.js'
 import { db } from '../lib/firebase.js'
@@ -155,6 +155,101 @@ router.post('/gov/agent/run-message', async (req, res) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Gov Agent message trigger 執行失敗',
+      data: null,
+    })
+  }
+})
+
+export interface ResourceFollowUpRequestBody {
+  resourceId?: string
+  replyId?: string
+  question?: string
+}
+
+export type ValidateFollowUpResult =
+  | { ok: true; resourceId: string; replyId: string; question: string }
+  | { ok: false; error: string }
+
+export function validateFollowUpRequest(body: ResourceFollowUpRequestBody | undefined): ValidateFollowUpResult {
+  const b = body ?? {}
+  if (typeof b.resourceId !== 'string' || !b.resourceId.trim()) {
+    return { ok: false, error: 'resourceId 必須是非空字串' }
+  }
+  if (typeof b.replyId !== 'string' || !b.replyId.trim()) {
+    return { ok: false, error: 'replyId 必須是非空字串' }
+  }
+  if (typeof b.question !== 'string' || !b.question.trim()) {
+    return { ok: false, error: 'question 必須是非空字串' }
+  }
+  return {
+    ok: true,
+    resourceId: b.resourceId.trim(),
+    replyId: b.replyId.trim(),
+    question: b.question.trim(),
+  }
+}
+
+// POST /api/resource-followup
+// Citizen-facing: user asks a follow-up question about a matched resource notification.
+router.post('/api/resource-followup', verifyToken, async (req, res) => {
+  const { uid } = req as AuthedRequest
+  const validated = validateFollowUpRequest(req.body as ResourceFollowUpRequestBody | undefined)
+
+  if (!validated.ok) {
+    res.status(400).json({ success: false, error: validated.error, data: null })
+    return
+  }
+
+  const { resourceId, replyId, question } = validated
+
+  try {
+    const resource = await getGovernmentResource(resourceId)
+    if (!resource) {
+      res.status(404).json({ success: false, error: `找不到資源: ${resourceId}`, data: null })
+      return
+    }
+
+    let notificationContent: string | undefined
+    let personaSummary: string | undefined
+
+    if (hasFirebaseAdminEnv()) {
+      const replyDoc = await db.collection('channel_replies').doc(replyId).get()
+      if (replyDoc.exists) {
+        notificationContent = replyDoc.data()!.content as string
+      }
+
+      const personaDoc = await db.collection('personas').doc(uid).get()
+      if (personaDoc.exists) {
+        personaSummary = personaDoc.data()!.summary as string
+      }
+    }
+
+    const sessionKey = `followup-${replyId}`
+    const sessionId = await initGovFollowUpSession({
+      agencyId: resource.agencyId,
+      agencyName: resource.agencyName,
+      resourceId: resource.rid,
+      resourceName: resource.name,
+      sessionKey,
+    })
+
+    const result = await runGovFollowUpQuestion(
+      sessionId,
+      { agencyId: resource.agencyId, resourceId: resource.rid },
+      {
+        question,
+        replyId,
+        resourceId,
+        notificationContent,
+        personaSummary,
+      },
+    )
+
+    res.json({ success: true, data: result })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : '追問處理失敗',
       data: null,
     })
   }

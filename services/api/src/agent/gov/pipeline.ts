@@ -9,7 +9,7 @@ import type { GovToolRuntimeContext } from './toolWrappers/index.js'
 import { hasFirebaseAdminEnv } from '../../lib/firebaseEnv.js'
 import { recordMatchAttempt } from '../../lib/matchStatsRepo.js'
 import { channelReplies, humanThreads } from '../../lib/store.js'
-import type { MatchDecision, MatchAssessment, GovAgentPipelineResult } from './types.js'
+import type { MatchDecision, MatchAssessment, GovAgentPipelineResult, FollowUpResult } from './types.js'
 
 export function parseMatchDecision(rawText: string): MatchDecision {
   const cleaned = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
@@ -313,4 +313,93 @@ export async function runGovAgentPipeline(
   }
 
   return results
+}
+
+export async function runGovFollowUpQuestion(
+  sessionId: string,
+  context: GovToolRuntimeContext,
+  payload: {
+    question: string
+    replyId: string
+    resourceId: string
+    notificationContent?: string
+    personaSummary?: string
+  },
+): Promise<FollowUpResult> {
+  const stream = await client.beta.sessions.events.stream(sessionId)
+
+  await client.beta.sessions.events.send(sessionId, {
+    events: [
+      {
+        type: 'user.message',
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              task: 'followup_question',
+              resourceId: payload.resourceId,
+              replyId: payload.replyId,
+              notificationContent: payload.notificationContent,
+              personaSummary: payload.personaSummary,
+              question: payload.question,
+            }),
+          },
+        ],
+      },
+    ],
+  })
+
+  let output = ''
+
+  for await (const event of stream) {
+    if (event.type === 'agent.custom_tool_use') {
+      console.log(`  [followup tool] ${event.name} called`)
+      try {
+        const toolResult = await executeGovCustomTool(event.name, event.input, context)
+        await client.beta.sessions.events.send(sessionId, {
+          events: [
+            {
+              type: 'user.custom_tool_result',
+              custom_tool_use_id: event.id,
+              content: [{ type: 'text', text: JSON.stringify(toolResult) }],
+            },
+          ],
+        })
+      } catch (error) {
+        await client.beta.sessions.events.send(sessionId, {
+          events: [
+            {
+              type: 'user.custom_tool_result',
+              custom_tool_use_id: event.id,
+              is_error: true,
+              content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }],
+            },
+          ],
+        })
+      }
+    }
+
+    if (event.type === 'agent.message') {
+      for (const block of event.content) {
+        if ('text' in block) {
+          output += block.text
+        }
+      }
+    }
+
+    if (event.type === 'session.status_idle') {
+      const reason = (event as { stop_reason?: { type: string } }).stop_reason
+      if (reason?.type !== 'requires_action') {
+        break
+      }
+    }
+  }
+
+  console.log(`[Gov FollowUp] Answer: ${output.slice(0, 200)}`)
+
+  return {
+    answer: output.trim(),
+    resourceId: payload.resourceId,
+    replyId: payload.replyId,
+  }
 }

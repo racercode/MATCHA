@@ -11,6 +11,7 @@ Phase 1 實作最小可行的 Gov Agent 媒合 pipeline：假資料 + Claude Man
 - `MatchDecision` — Claude 的結構化媒合判斷（eligible、score、reason、missingInfo）
 - `MatchAssessment` — 將一組 channel message + resource + decision 綁在一起
 - `GovAgentPipelineResult` — pipeline 最終輸出（assessment + reply）
+- `FollowUpResult` — 追問功能的回應（answer、resourceId、replyId）
 
 ### 假資料（`fakeData.ts`）
 
@@ -62,6 +63,7 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 - 註冊 `read_channel`、`query_resource_document`、`write_channel_reply` custom tools
 - 建立或重用 environment 和 session
 - 匯出 `initGovManagedAgentSession()`，回傳 `sessionId`
+- 匯出 `initGovFollowUpSession()`，使用 `GOV_FOLLOWUP_SYSTEM_PROMPT` 建立 Q&A 模式的 agent session，用於市民追問功能
 
 ### Agent Registry（`general/`）
 
@@ -79,6 +81,7 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 - `parseMatchDecision(rawText)` — 驗證並解析 Claude 的 JSON 回應，自動清除 markdown code fence
 - `runGovAgentForChannelUpdate(sessionId, channelMessage, context)` — channel 更新時喚醒單一 Resource Agent，讓 Agent 自主使用 custom tools，最後回傳 match result 或 `null`
 - `runGovAgentPipeline(resourceAgents, messages, threshold?)` — 對每筆 channel update 逐一呼叫各 Resource Agent，收集有回應的結果
+- `runGovFollowUpQuestion(sessionId, context, payload)` — 市民追問功能，送追問到 follow-up agent session，處理 tool calls（query_resource_document），收集純文字回答
 
 ### 測試進入點（`main.ts`）
 
@@ -89,13 +92,20 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 4. Agent 自主呼叫 custom tools
 5. 印出可讀的結果和完整 JSON，包含 `ChannelReply`
 
-### 單元測試（`pipeline.test.ts`）
+### 單元測試（`pipeline.test.ts` + `gov.test.ts`）
 
-4 個 suite、19 個測試，涵蓋：
+pipeline.test.ts — 4 個 suite、17 個測試，涵蓋：
 - `parseMatchDecision` — 合法 JSON、markdown fence 清除、所有驗證錯誤情境
 - `readChannelToolWrapper` — 無篩選、since 篩選、limit 限制
 - `queryResourcePdfToolWrapper` — runtime context resource scoping、未知 context、忽略 agent input 裡的 resourceId
 - `writeChannelReplyToolWrapper` — reply 資料結構、deterministic replyId
+
+gov.test.ts — 5 個 suite、20 個測試，涵蓋：
+- `normalizeChannelMessage` — 合法 payload、不完整 payload
+- `selectResources` — 單一 / 全部 resource 篩選
+- `buildGovAgentRunPlan` — 各種 plan 建構場景
+- `serializeGovAgentResult` — API 回傳格式
+- `validateFollowUpRequest` — 合法追問、trim、缺少 resourceId / replyId / question、空字串、undefined body
 
 ## 架構流程
 
@@ -111,6 +121,25 @@ main.ts（進入點）
           → user.custom_tool_result
           → final JSON or null
 ```
+
+### 追問流程（Follow-Up）
+
+```
+POST /api/resource-followup { resourceId, replyId, question }
+  → verifyToken (citizen OK)
+  → validateFollowUpRequest()
+  → getGovernmentResource(resourceId)
+  → read channel_replies/{replyId}, personas/{uid}
+  → initGovFollowUpSession(sessionKey = followup-{replyId})
+     → 使用 GOV_FOLLOWUP_SYSTEM_PROMPT（Q&A 模式）
+     → 複用既有 environment，建立新 agent + session
+  → runGovFollowUpQuestion()
+     → agent 可呼叫 query_resource_document
+     → 收集純文字回答
+  → return { answer, resourceId, replyId }
+```
+
+多輪對話靠 `sessionKey = followup-{replyId}` 管理，同一個 replyId 的追問共用 session。
 
 ## Match Inbox polling 責任
 

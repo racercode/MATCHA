@@ -55,6 +55,19 @@ const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
   "missingInfo": ["可能未符合的條件1", "可能未符合的條件2"]
 }`
 
+const GOV_FOLLOWUP_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent，目前處於「追問回答」模式。
+使用者已收到這個政府資源的媒合通知，現在想進一步了解細節。
+
+請遵守：
+1. 只回答與此綁定資源相關的問題。
+2. 用 query_resource_document 查詢資源文件來回答，確保回答有依據。
+3. 不要捏造資料，如果文件中找不到答案，誠實告知使用者你無法確認，建議他們聯繫承辦單位。
+4. 用友善、易懂的語氣回答，像是一位熱心的政府服務人員。
+5. 回答用純文字，不要回傳 JSON。
+6. 不要呼叫任何寫入資料庫的工具。`
+
+export { GOV_FOLLOWUP_SYSTEM_PROMPT }
+
 const GOV_CUSTOM_TOOLS = [
   {
     name: 'query_resource_document',
@@ -276,5 +289,58 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
   await upsertGovernmentAgentRecord(nextRecord)
 
   console.log(`[Gov Agent] Session created for ${agentScope}: ${session.id}`)
+  return session.id
+}
+
+export async function initGovFollowUpSession(options: InitGovManagedAgentSessionOptions = {}): Promise<string> {
+  const agencyId = options.agencyId ?? DEFAULT_AGENCY_ID
+  const agencyName = options.agencyName ?? DEFAULT_AGENCY_NAME
+  const resourceId = options.resourceId
+  const resourceName = options.resourceName
+  const sessionKey = options.sessionKey ?? DEFAULT_SESSION_KEY
+  const now = Date.now()
+  const agentScope = resourceId ? `${agencyId}:${resourceId}` : agencyId
+  const agentScopeSlug = agentScope.replace(/[^a-zA-Z0-9-_]/g, '-')
+  const displayName = resourceName ? `${resourceName} (${resourceId})` : agentScope
+
+  const skillIds = await createGovSkills()
+
+  const agent = await client.beta.agents.create({
+    name: `MATCHA Gov FollowUp Agent (${displayName})`,
+    model: GOV_AGENT_MODEL,
+    system: GOV_FOLLOWUP_SYSTEM_PROMPT,
+    skills: toSkillParams(skillIds),
+    tools: [
+      ...GOV_CUSTOM_TOOLS,
+      {
+        type: 'agent_toolset_20260401' as const,
+        configs: [{ name: 'read' as const, enabled: true }],
+      },
+    ],
+  })
+  console.log(`[Gov FollowUp] Agent created for ${agentScope}: ${agent.id}`)
+
+  let record = await getGovernmentAgentRecord(agencyId, resourceId)
+  let environmentId = record?.environmentId
+
+  if (!environmentId) {
+    const environment = await client.beta.environments.create({
+      name: `matcha-gov-agent-env-${agentScopeSlug}`,
+      config: {
+        type: 'cloud',
+        networking: { type: 'unrestricted' },
+      },
+    })
+    environmentId = environment.id
+    console.log(`[Gov FollowUp] Environment created for ${agentScope}: ${environmentId}`)
+  }
+
+  const session = await client.beta.sessions.create({
+    agent: agent.id,
+    environment_id: environmentId,
+    title: `followup-${(resourceId ?? agencyId).slice(0, 30)}-${sessionKey}`.slice(0, 64),
+  })
+
+  console.log(`[Gov FollowUp] Session created for ${agentScope}: ${session.id}`)
   return session.id
 }

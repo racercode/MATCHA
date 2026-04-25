@@ -17,3 +17,9 @@ export interface GovAgentPipelineResult {
   assessment: MatchAssessment
   reply: ChannelReply
 }
+
+export interface FollowUpResult {
+  answer: string
+  resourceId: string
+  replyId: string
+}
