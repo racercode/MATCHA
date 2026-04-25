@@ -3,6 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import {
   Alert,
   Image,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -50,7 +51,14 @@ export default function EditProfileModal({
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (permission.status !== 'granted') {
-        Alert.alert('權限不足', '需要相簿權限才能選擇照片');
+        Alert.alert(
+          '需要相簿權限',
+          '請至裝置設定允許 MATCHA 存取相片庫，才能更換大頭貼。',
+          [
+            { text: '取消', style: 'cancel' },
+            { text: '前往設定', onPress: () => Linking.openSettings() },
+          ],
+        );
         return;
       }
 

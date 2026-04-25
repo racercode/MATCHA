@@ -87,12 +87,19 @@ const COFFEE_CUSTOM_TOOLS = [
   },
 ]
 
-async function findExistingCoffeeSkills(): Promise<Map<string, string>> {
+async function listAllSkills(): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   for await (const skill of client.beta.skills.list()) {
-    if (skill.display_title?.startsWith('MATCHA Coffee ')) {
-      map.set(skill.display_title, skill.id)
-    }
+    if (skill.display_title) map.set(skill.display_title, skill.id)
+  }
+  return map
+}
+
+async function findExistingCoffeeSkills(): Promise<Map<string, string>> {
+  const all = await listAllSkills()
+  const map = new Map<string, string>()
+  for (const [title, id] of all) {
+    if (title.startsWith('MATCHA Coffee ')) map.set(title, id)
   }
   return map
 }
@@ -105,20 +112,30 @@ async function createCoffeeSkill(skillName: string, existing: Map<string, string
   const skillPath = path.join(__dirname, 'skills', skillName, 'SKILL.md')
   const content = await readFile(skillPath, 'utf8')
   const file = await Anthropic.toFile(Buffer.from(content, 'utf8'), `${skillName}/SKILL.md`)
-  const skill = await client.beta.skills.create({
-    display_title: displayTitle,
-    files: [file],
-  })
-  return skill.id
+  try {
+    const skill = await client.beta.skills.create({
+      display_title: displayTitle,
+      files: [file],
+    })
+    return skill.id
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('display_title') || msg.includes('reuse')) {
+      const all = await listAllSkills()
+      const id = all.get(displayTitle)
+      if (id) return id
+    }
+    throw err
+  }
 }
 
 async function createCoffeeSkills(): Promise<string[]> {
   const existing = await findExistingCoffeeSkills()
-  return Promise.all([
-    createCoffeeSkill('read_recent_personas', existing),
-    createCoffeeSkill('propose_peer_match', existing),
-    createCoffeeSkill('relay_message', existing),
-  ])
+  const ids: string[] = []
+  for (const name of ['read_recent_personas', 'propose_peer_match', 'relay_message']) {
+    ids.push(await createCoffeeSkill(name, existing))
+  }
+  return ids
 }
 
 function toSkillParams(skillIds: string[]) {
@@ -191,7 +208,13 @@ export async function initCoffeeManagedAgentSession(sessionKey = COFFEE_GLOBAL_S
       model: COFFEE_AGENT_MODEL,
       system: COFFEE_AGENT_SYSTEM_PROMPT,
       skills: toSkillParams(skillIds),
-      tools: COFFEE_CUSTOM_TOOLS,
+      tools: [
+        ...COFFEE_CUSTOM_TOOLS,
+        {
+          type: 'agent_toolset_20260401' as const,
+          configs: [{ name: 'read' as const, enabled: true }],
+        },
+      ],
     })
     console.log(`[Coffee Agent] Agent updated: ${agentId}`)
   }

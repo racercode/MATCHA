@@ -10,12 +10,11 @@ export async function publishToChannelToolWrapper(
   uid: string,
   input: PublishToChannelInput,
 ): Promise<PublishToChannelResult> {
-  const msgId = `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-  await db.collection('channel_messages').doc(msgId).set({
-    uid,
-    summary: input.summary,
-    createdAt: Date.now(),
-  })
+  const now = Date.now()
+  const msgId = `m-${now}-${Math.random().toString(36).slice(2, 6)}`
+  await db.collection('channel_messages').doc(msgId).set({ uid, summary: input.summary, createdAt: now })
+
+  console.log(`[publishToChannel] uid=${uid} msgId=${msgId} summary="${input.summary.slice(0, 80)}"`)
 
   // Fire-and-forget: trigger Coffee Agent and Gov Agent in background
   import('../../coffee/pipeline.js')

@@ -26,7 +26,12 @@
       "PowerShell(cd C:\\\\Users\\\\gary9\\\\programming\\\\ytp\\\\services\\\\api; npx tsc --noEmit 2>&1; echo \"Exit: $LASTEXITCODE\")",
       "Bash(grep -E \"\\\\.\\(ts|md|json\\)$\")",
       "Bash(git -C \"C:/Users/gary9/programming/ytp\" show HEAD:services/api/src/lib/firebase.ts)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(pnpm --filter api add pdf-parse)",
+      "Bash(pnpm --filter api add -D @types/pdf-parse)",
+      "Bash(xargs ls *)",
+      "Bash(pnpm --filter api exec tsc --noEmit)",
+      "Bash(node data/upload.js 青年創業共享空間租賃補助作業要點)"
     ]
   }
 }

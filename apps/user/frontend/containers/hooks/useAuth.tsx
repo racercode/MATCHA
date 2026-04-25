@@ -13,6 +13,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import type { AuthUser } from '@matcha/shared-types';
 import { auth } from '@/lib/firebase';
+import { API_BASE_URL } from '@/lib/api';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -50,7 +51,7 @@ const getGoogleConfig = () => {
 
 type AuthProviderInnerProps = {
   children: React.ReactNode;
-  googleRequest: Google.AuthRequest | null;
+  googleRequest: ReturnType<typeof Google.useAuthRequest>[0];
   googlePromptAsync?: ReturnType<typeof Google.useAuthRequest>[2];
   isGoogleSignInAvailable: boolean;
 };
@@ -66,9 +67,9 @@ const AuthProviderInner = ({
   const [loadingMessage, setLoadingMessage] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // role 先 hardcode 'citizen'；之後 Milestone 2 查 Firestore /gov_staff/{uid}
+        // Set user immediately so downstream components don't see uid=null
         setUser({
           uid: firebaseUser.uid,
           email: firebaseUser.email ?? undefined,
@@ -76,10 +77,27 @@ const AuthProviderInner = ({
           photoURL: firebaseUser.photoURL ?? undefined,
           role: 'citizen',
         });
+        setIsInitialized(true);
+
+        // Update role in background — doesn't block UI
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          const res = await fetch(`${API_BASE_URL}/auth/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken }),
+          });
+          const json = await res.json();
+          if (res.ok && json.success && json.data.role !== 'citizen') {
+            setUser((prev) => (prev ? { ...prev, role: json.data.role } : prev));
+          }
+        } catch {
+          // keep citizen
+        }
       } else {
         setUser(null);
+        setIsInitialized(true);
       }
-      setIsInitialized(true);
     });
     return unsubscribe;
   }, []);

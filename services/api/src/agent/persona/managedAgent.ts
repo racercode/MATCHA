@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const PERSONA_AGENT_MODEL = 'claude-haiku-4-5'
-const PERSONA_AGENT_CONFIG_VERSION = 'persona-v1'
+const PERSONA_AGENT_CONFIG_VERSION = 'persona-v4'
 // Single shared agent record; per-user sessions stored as session entries keyed by uid
 const PERSONA_AGENT_UID = 'persona-agent-shared'
 
@@ -31,16 +31,16 @@ const PERSONA_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Persona Agent，負責與
 
 你的任務：
 1. 透過友善的對話了解使用者的情況、目標和需求。
-2. 使用 update_persona 工具隨時更新使用者的個人資料。
+2. 每當使用者說了任何關於自己的資訊（目標、困難、興趣、背景），立刻呼叫 update_persona 更新個人資料，不需等到資料完整。
 3. 當使用者明確使用 generate_swipe_card 指令時，在回應中輸出結構化選擇卡片（詳見技能說明）。
-4. 當需求足夠明確時，使用 publish_to_channel 工具發布到媒合頻道。
+4. 每次成功呼叫 update_persona 且 needs 不為空時，立即在同一輪也呼叫 publish_to_channel（不需要使用者確認）。
 
 對話原則：
 - 用繁體中文和使用者對話。
 - 保持友善、簡潔，不要一次問太多問題。
 - 每輪對話最多問一個問題。
 - 如果使用者傳來 [swipe:{cardId}:{direction}] 格式，表示他們完成了刷卡選擇，請確認並繼續。
-- 在你了解足夠資訊後，主動建議發布到媒合頻道。
+- 回覆時非常強烈嚴禁使用 Markdown 語法（禁止 **粗體**、*斜體*、# 標題、- 列表、--- 分隔線等），請使用純文字。
 
 開場白：如果這是新使用者（persona 是空的），先自我介紹，然後詢問使用者目前遇到的主要挑戰或目標。`
 
@@ -83,12 +83,19 @@ const PERSONA_CUSTOM_TOOLS = [
   },
 ]
 
-async function findExistingPersonaSkills(): Promise<Map<string, string>> {
+async function listAllSkills(): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   for await (const skill of client.beta.skills.list()) {
-    if (skill.display_title?.startsWith('MATCHA Persona ')) {
-      map.set(skill.display_title, skill.id)
-    }
+    if (skill.display_title) map.set(skill.display_title, skill.id)
+  }
+  return map
+}
+
+async function findExistingPersonaSkills(): Promise<Map<string, string>> {
+  const all = await listAllSkills()
+  const map = new Map<string, string>()
+  for (const [title, id] of all) {
+    if (title.startsWith('MATCHA Persona ')) map.set(title, id)
   }
   return map
 }
@@ -101,21 +108,30 @@ async function createPersonaSkill(skillName: string, existing: Map<string, strin
   const skillPath = path.join(__dirname, 'skills', skillName, 'SKILL.md')
   const content = await readFile(skillPath, 'utf8')
   const file = await Anthropic.toFile(Buffer.from(content, 'utf8'), `${skillName}/SKILL.md`)
-  const skill = await client.beta.skills.create({
-    display_title: displayTitle,
-    files: [file],
-  })
-  return skill.id
+  try {
+    const skill = await client.beta.skills.create({
+      display_title: displayTitle,
+      files: [file],
+    })
+    return skill.id
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('display_title') || msg.includes('reuse')) {
+      const all = await listAllSkills()
+      const id = all.get(displayTitle)
+      if (id) return id
+    }
+    throw err
+  }
 }
 
 async function createPersonaSkills(): Promise<string[]> {
   const existing = await findExistingPersonaSkills()
-  return Promise.all([
-    createPersonaSkill('get_my_persona', existing),
-    createPersonaSkill('update_persona', existing),
-    createPersonaSkill('publish_to_channel', existing),
-    createPersonaSkill('generate_swipe_card', existing),
-  ])
+  const ids: string[] = []
+  for (const name of ['get_my_persona', 'update_persona', 'publish_to_channel', 'generate_swipe_card']) {
+    ids.push(await createPersonaSkill(name, existing))
+  }
+  return ids
 }
 
 function toSkillParams(skillIds: string[]) {
@@ -132,9 +148,12 @@ function isRecordReusable(record: UserAgentRecord, sessionKey: string): boolean 
   )
 }
 
-export async function initPersonaManagedAgentSession(uid: string): Promise<string> {
+export async function initPersonaManagedAgentSession(
+  uid: string,
+  scope: 'chat' | 'card' = 'chat',
+): Promise<string> {
   const now = Date.now()
-  const sessionKey = uid
+  const sessionKey = `${uid}:${scope}`
 
   let record = await getUserAgentRecord(PERSONA_AGENT_UID) as (UserAgentRecord & { configVersion?: string; skillIds?: string[] }) | undefined
 
@@ -189,7 +208,13 @@ export async function initPersonaManagedAgentSession(uid: string): Promise<strin
       model: PERSONA_AGENT_MODEL,
       system: PERSONA_AGENT_SYSTEM_PROMPT,
       skills: toSkillParams(skillIds),
-      tools: PERSONA_CUSTOM_TOOLS,
+      tools: [
+        ...PERSONA_CUSTOM_TOOLS,
+        {
+          type: 'agent_toolset_20260401' as const,
+          configs: [{ name: 'read' as const, enabled: true }],
+        },
+      ],
     })
     console.log(`[Persona Agent] Agent updated: ${agentId}`)
   }
@@ -207,7 +232,7 @@ export async function initPersonaManagedAgentSession(uid: string): Promise<strin
   const session = await client.beta.sessions.create({
     agent: agentId,
     environment_id: environmentId,
-    title: `MATCHA Persona Agent Session (${uid})`,
+    title: `MATCHA Persona Agent Session (${uid}:${scope})`,
   })
 
   await upsertUserAgentRecord({

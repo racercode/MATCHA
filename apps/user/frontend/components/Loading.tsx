@@ -1,13 +1,70 @@
-import { StyleSheet } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, Easing, Image, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
-import { ThemedActivityIndicator } from './ThemedActivityIndicator';
 
-const Loading = ({ text = '', opacity = true }: { text?: string; opacity?: boolean }) => {
+const disableImage = require('@/assets/Bear/disable.png');
+
+const Loading = ({
+  text = '',
+  opacity = true,
+  contentStyle,
+}: {
+  text?: string;
+  opacity?: boolean;
+  contentStyle?: StyleProp<ViewStyle>;
+}) => {
+  const imageBounce = useRef(new Animated.Value(0)).current;
+  const dotBounces = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current;
+
+  useEffect(() => {
+    const createBounce = (animatedValue: Animated.Value, delay = 0) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(animatedValue, {
+            toValue: -10,
+            duration: 380,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(animatedValue, {
+            toValue: 0,
+            duration: 380,
+            easing: Easing.in(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+
+    const animations = [
+      createBounce(imageBounce),
+      ...dotBounces.map((dot, index) => createBounce(dot, index * 120)),
+    ];
+
+    animations.forEach((animation) => animation.start());
+
+    return () => {
+      animations.forEach((animation) => animation.stop());
+    };
+  }, [dotBounces, imageBounce]);
+
   return (
     <ThemedView style={[opacity ? { opacity: 1 } : { opacity: 0.5 }, styles.overlay]}>
-      <ThemedActivityIndicator size="large" />
-      {text !== '' && <ThemedText type="default">{text}</ThemedText>}
+      <View style={[styles.content, contentStyle]}>
+        <Animated.View style={[styles.imageWrap, { transform: [{ translateY: imageBounce }] }]}>
+          <Image source={disableImage} style={styles.image} resizeMode="contain" />
+        </Animated.View>
+        <View style={styles.dotsRow}>
+          {dotBounces.map((dot, index) => (
+            <Animated.View
+              key={index}
+              style={[styles.dot, { transform: [{ translateY: dot }] }]}
+            />
+          ))}
+        </View>
+        {text !== '' && <ThemedText type="default" style={styles.text}>{text}</ThemedText>}
+      </View>
     </ThemedView>
   );
 };
@@ -20,5 +77,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 999,
+  },
+  content: {
+    alignItems: 'center',
+  },
+  imageWrap: {
+    marginBottom: 10,
+  },
+  image: {
+    width: 150,
+    height: 138,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginBottom: 8,
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#A8A8A8',
+  },
+  text: {
+    color: '#8A8A8A',
+    fontWeight: '700',
   },
 });

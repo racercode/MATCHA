@@ -6,6 +6,8 @@ import { clients, userRoles, userGovIds, broadcast } from './push.js'
 import type { ServerEvent } from './push.js'
 import { initPersonaManagedAgentSession } from '../agent/persona/managedAgent.js'
 import { runPersonaAgentTurn } from '../agent/persona/pipeline.js'
+import { generateSwipeCards, processSwipeAnswers } from '../agent/persona/cardAgent.js'
+
 
 export { broadcast }
 
@@ -33,12 +35,85 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         sendError(ws, 'BAD_REQUEST', '缺少 content')
         return
       }
+      const userText = msg.content
+      await db.collection('persona_chats').doc(uid).collection('messages').add({
+        from: `human:${uid}`,
+        text: userText,
+        createdAt: msToTimestamp(Date.now()),
+      })
       try {
-        const sessionId = await initPersonaManagedAgentSession(uid)
-        await runPersonaAgentTurn(sessionId, uid, msg.content, event => sendToSocket(ws, event))
+        const sessionId = await initPersonaManagedAgentSession(uid, 'chat')
+        let agentText = ''
+        await runPersonaAgentTurn(sessionId, uid, userText, event => {
+          sendToSocket(ws, event)
+          if (event.type === 'agent_reply' && !event.done && typeof event.content === 'string') {
+            agentText += event.content
+          }
+        })
+        if (agentText.trim()) {
+          await db.collection('persona_chats').doc(uid).collection('messages').add({
+            from: 'persona_agent',
+            text: agentText,
+            createdAt: msToTimestamp(Date.now()),
+          })
+        }
       } catch (err) {
         console.error('[persona] agent error:', err)
         sendError(ws, 'AGENT_ERROR', '代理人發生錯誤，請稍後再試')
+      }
+      break
+    }
+
+    case 'swipe_card_request': {
+      console.log(`[card] swipe_card_request from ${uid}`)
+      try {
+        const personaDoc = await db.collection('personas').doc(uid).get()
+        const persona = personaDoc.exists
+          ? (personaDoc.data() as { summary: string; needs: string[]; offers: string[] })
+          : null
+        const cards = await generateSwipeCards(uid, persona)
+        for (const card of cards) {
+          broadcast(uid, { type: 'swipe_card', card })
+        }
+        sendToSocket(ws, { type: 'agent_reply', content: '', done: true })
+      } catch (err) {
+        console.error('[card] generateSwipeCards error:', err)
+        sendError(ws, 'AGENT_ERROR', '卡片生成失敗，請稍後再試')
+      }
+      break
+    }
+
+    case 'swipe_card_answer': {
+      // Single-answer path kept for compatibility but not used by current frontend
+      sendToSocket(ws, { type: 'agent_reply', content: '', done: true })
+      break
+    }
+
+    case 'swipe_card_batch_answer': {
+      console.log(`[card] swipe_card_batch_answer from ${uid}, ${(msg.answers as unknown[])?.length ?? 0} answers`)
+      const { answers } = msg
+      if (
+        !Array.isArray(answers) ||
+        answers.length === 0 ||
+        answers.some(
+          answer =>
+            !answer ||
+            typeof answer !== 'object' ||
+            typeof answer.cardId !== 'string' ||
+            (answer.direction !== 'left' && answer.direction !== 'right') ||
+            typeof answer.value !== 'string',
+        )
+      ) {
+        sendError(ws, 'BAD_REQUEST', '缺少有效的 swipe card answers')
+        return
+      }
+
+      try {
+        await processSwipeAnswers(uid, answers as { cardId: string; direction: 'left' | 'right'; value: string }[])
+        sendToSocket(ws, { type: 'agent_reply', content: '', done: true })
+      } catch (err) {
+        console.error('[card] processSwipeAnswers error:', err)
+        sendError(ws, 'AGENT_ERROR', '卡片答案批次送出失敗，請稍後再試')
       }
       break
     }
@@ -185,10 +260,21 @@ export async function upgradeHandler(
     return
   }
 
-  const uid = token.trim()
-  const staffDoc = await db.collection('gov_staff').doc(uid).get()
-  const role: 'citizen' | 'gov_staff' = staffDoc.exists ? 'gov_staff' : 'citizen'
-  const govId = staffDoc.exists ? (staffDoc.data()!.govId as string) : undefined
+  let uid: string
+  try {
+    const { auth: firebaseAuth } = await import('../lib/firebase.js')
+    const decoded = await firebaseAuth.verifyIdToken(token.trim())
+    uid = decoded.uid
+  } catch {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+    socket.destroy()
+    return
+  }
+
+  const staffSnap = await db.collection('gov_staff').where('uid', '==', uid).limit(1).get()
+  const staffDoc = staffSnap.docs[0]
+  const role: 'citizen' | 'gov_staff' = staffDoc ? 'gov_staff' : 'citizen'
+  const govId = staffDoc ? (staffDoc.data().govId as string) : undefined
 
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req, uid, role, govId)

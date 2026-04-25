@@ -30,5 +30,6 @@ export async function relayMessageToolWrapper(input: RelayMessageInput): Promise
   broadcast(thread.userAId as string, { type: 'peer_message', message: midObj })
   broadcast(thread.userBId as string, { type: 'peer_message', message: midObj })
 
+  console.log(`[Coffee Agent] relay_message → thread ${threadId}: "${content.slice(0, 80)}"`)
   return { relayed: true, mid: msgRef.id }
 }

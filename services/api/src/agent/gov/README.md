@@ -19,7 +19,7 @@ services/api/src/agent/gov/
 ├── pipeline.test.ts      # 單元測試（node:test）
 ├── skills/
 │   ├── read_channel/SKILL.md
-│   ├── query_resource_pdf/SKILL.md
+│   ├── query_resource_document/SKILL.md
 │   ├── write_channel_reply/SKILL.md
 │   └── escalate_to_caseworker/SKILL.md
 ├── toolWrappers/
@@ -70,7 +70,7 @@ npm run gov:run
 2. 讀取 `general/governmentAgents.json`，依每個 `resourceId` 重用或建立 Claude Managed Agent session（claude-haiku-4-5）
 3. 建立/更新 agent 時上傳 Markdown Skills，並註冊 custom tools
 4. 對每筆 channel update 喚醒每個 Resource Agent
-5. Agent 自主呼叫 `read_channel`、`query_resource_pdf`、`write_channel_reply`
+5. Agent 自主呼叫 `read_channel`、`query_resource_document`、`write_channel_reply`
 6. Agent 回傳 match 結果或 `null`
 
 預期輸出：Claude 至少應該配對到：
@@ -84,7 +84,7 @@ npm run gov:run
 
 **Custom Tools** 是 Claude Managed Agent 可自主呼叫的工具介面。Agent 呼叫 custom tool 時，後端收到 `agent.custom_tool_use` event，執行對應 tool wrapper，再用 `user.custom_tool_result` 回傳結果。
 
-**Tool Wrappers** 是 TypeScript 執行層。`query_resource_pdf` 會依 runtime context 只回傳該 Agent 綁定的單一 `resourceId`，有 Firebase env 時讀 `gov_resources/{rid}` 與 `gov_resources/{rid}/documents/*`，沒有 Firebase env 時 fallback 到 fake data summary document。文件上傳時由 API 解析成 `extractedText`：PDF 透過 parser 抽文字，Markdown / txt / CSV 直接保存，HTML 會先去除 tag，XLSX / XLS 會逐 sheet 轉成 CSV 文字。
+**Tool Wrappers** 是 TypeScript 執行層。`query_resource_document` 會依 runtime context 只回傳該 Agent 綁定的單一 `resourceId`，有 Firebase env 時讀 `gov_resources/{rid}` 與 `gov_resources/{rid}/documents/*`，沒有 Firebase env 時 fallback 到 fake data summary document。文件上傳時由 API 解析成 `extractedText`：PDF 透過 parser 抽文字，Markdown / txt / CSV 直接保存，HTML 會先去除 tag，XLSX / XLS 會逐 sheet 轉成 CSV 文字。
 
 **Pipeline** 負責在 channel 更新時逐一喚醒 Resource Agent，處理 custom tool events，並接收 Agent 最終回傳的 match result 或 `null`。
 

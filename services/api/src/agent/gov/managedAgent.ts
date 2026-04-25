@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const GOV_AGENT_MODEL = 'claude-haiku-4-5'
-const GOV_AGENT_CONFIG_VERSION = 'persist-v1'
+const GOV_AGENT_CONFIG_VERSION = 'persist-v2'
 const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 const DEFAULT_AGENCY_NAME = '臺北市青年局'
 const DEFAULT_SESSION_KEY = 'default'
@@ -38,8 +38,8 @@ const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
 2. 如果資格條件缺少關鍵資訊，請填入 missingInfo。
 3. score 必須是 0 到 100 的整數。
 4. 只有明顯值得主動推薦時 eligible 才能是 true。
-5. 需要資料時，自己呼叫 read_channel、query_resource_pdf custom tools。
-6. query_resource_pdf 只會回傳你這個 resource agent 被授權看到的單一政府資源與其文件文字。
+5. 需要資料時，自己呼叫 query_resource_document custom tool。
+6. query_resource_document 只會回傳你這個 resource agent 被授權看到的單一政府資源與其文件文字。
 7. 不要嘗試查詢或媒合其他 resourceId。
 8. 如果不需要回應，最後只回傳 null。
 9. 如果需要回應，最後只回傳 MatchDecision JSON；後端 pipeline 會負責建立並寫入 ChannelReply。
@@ -56,19 +56,7 @@ const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
 
 const GOV_CUSTOM_TOOLS = [
   {
-    name: 'read_channel',
-    type: 'custom' as const,
-    description: 'Read recent channel messages from the central channel. Use this to inspect channel updates before deciding whether to match.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        since: { type: 'number', description: 'Optional unix ms timestamp. Only messages newer than this are returned.' },
-        limit: { type: 'number', description: 'Optional max number of messages to return.' },
-      },
-    },
-  },
-  {
-    name: 'query_resource_pdf',
+    name: 'query_resource_document',
     type: 'custom' as const,
     description: 'Query the single government resource and document text bound to this resource agent. Use before evaluating eligibility or fit.',
     input_schema: {
@@ -80,40 +68,61 @@ const GOV_CUSTOM_TOOLS = [
   },
 ]
 
-async function findExistingSkills(): Promise<Map<string, string>> {
+async function listAllSkills(): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   for await (const skill of client.beta.skills.list()) {
-    if (skill.display_title?.startsWith('MATCHA Gov ')) {
-      map.set(skill.display_title, skill.id)
-    }
+    if (skill.display_title) map.set(skill.display_title, skill.id)
   }
   return map
 }
 
+async function findExistingSkills(): Promise<Map<string, string>> {
+  const all = await listAllSkills()
+  const map = new Map<string, string>()
+  for (const [title, id] of all) {
+    if (title.startsWith('MATCHA Gov ')) map.set(title, id)
+  }
+  return map
+}
+
+// Module-level cache: all Gov resource agents share the same two skills
+let sharedSkillIdsPromise: Promise<string[]> | null = null
+
 async function createGovSkill(skillName: string, existing: Map<string, string>): Promise<string> {
   const displayTitle = `MATCHA Gov ${skillName} (${GOV_AGENT_CONFIG_VERSION})`
   const existingId = existing.get(displayTitle)
-  if (existingId) {
-    return existingId
-  }
+  if (existingId) return existingId
 
   const skillPath = path.join(__dirname, 'skills', skillName, 'SKILL.md')
   const content = await readFile(skillPath, 'utf8')
   const file = await Anthropic.toFile(Buffer.from(content, 'utf8'), `${skillName}/SKILL.md`)
-  const skill = await client.beta.skills.create({
-    display_title: displayTitle,
-    files: [file],
-  })
-
-  return skill.id
+  try {
+    const skill = await client.beta.skills.create({
+      display_title: displayTitle,
+      files: [file],
+    })
+    return skill.id
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('display_title') || msg.includes('reuse')) {
+      const all = await listAllSkills()
+      const id = all.get(displayTitle)
+      if (id) return id
+    }
+    throw err
+  }
 }
 
 async function createGovSkills(): Promise<string[]> {
-  const existing = await findExistingSkills()
-  return Promise.all([
-    createGovSkill('read_channel', existing),
-    createGovSkill('query_resource_pdf', existing),
-  ])
+  if (!sharedSkillIdsPromise) {
+    sharedSkillIdsPromise = (async () => {
+      const existing = await findExistingSkills()
+      return Promise.all([
+        createGovSkill('query_resource_document', existing),
+      ])
+    })().catch(err => { sharedSkillIdsPromise = null; throw err })
+  }
+  return sharedSkillIdsPromise
 }
 
 function toSkillParams(skillIds: string[]) {
@@ -240,7 +249,7 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
   const session = await client.beta.sessions.create({
     agent: agentId,
     environment_id: environmentId,
-    title: `gov-${resourceId.slice(0, 30)}-${sessionKey}`.slice(0, 64),
+    title: `gov-${(resourceId ?? agencyId).slice(0, 30)}-${sessionKey}`.slice(0, 64),
   })
 
   const nextRecord: GovernmentAgentRecord = {
@@ -256,7 +265,7 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
     sessions: upsertSession(record.sessions, {
       key: sessionKey,
       sessionId: session.id,
-      title: `gov-${resourceId.slice(0, 30)}-${sessionKey}`.slice(0, 64),
+      title: `gov-${(resourceId ?? agencyId).slice(0, 30)}-${sessionKey}`.slice(0, 64),
       createdAt: now,
       updatedAt: now,
     }),
