@@ -4,6 +4,7 @@ import authRouter from './routes/auth.js'
 import meRouter from './routes/me.js'
 import threadsRouter from './routes/threads.js'
 import govRouter from './routes/gov.js'
+import govDashboardRouter from './routes/govDashboard.js'
 
 export function createApp(): Express {
   const app = express()
@@ -14,6 +15,7 @@ export function createApp(): Express {
 
   app.use(authRouter)
   app.use(govRouter)
+  app.use(govDashboardRouter)
   app.use(meRouter)
   app.use(threadsRouter)
 
