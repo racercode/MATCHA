@@ -156,6 +156,83 @@ export function createMockApp(): Express {
     })
   })
 
+  // -------------------------------------------------------------------------
+  // REST — Peer Threads (Coffee Chat)
+  // -------------------------------------------------------------------------
+
+  const mockPeerThreadItems = [
+    {
+      thread: {
+        tid: 'peer-tid-001',
+        type: 'user_user',
+        initiatorId: `user:${MOCK_PERSONA.uid}`,
+        responderId: 'user:peer-uid-001',
+        status: 'matched',
+        matchScore: 91,
+        summary: 'Persona agent 與品牌設計取向的 peer 對話紀錄。',
+        userPresence: 'agent',
+        govPresence: 'agent',
+        peerPresence: 'agent',
+        createdAt: Date.now() - 1000 * 60 * 60 * 20,
+        updatedAt: Date.now() - 1000 * 60 * 60 * 18,
+      },
+      peer: {
+        uid: 'peer-uid-001',
+        displayName: '想轉品牌設計的ian',
+        summary: '文組背景，正在轉職 UI / 品牌設計，自學 Figma 兩個月，靠接小案子建立作品集',
+      },
+      bullets: ['先找練習案子再考隨班課程，省時省錢', 'Behance 比 IG 更能被設計公司看到', '跨域補助和實習可以同期進行'],
+    },
+    {
+      thread: {
+        tid: 'peer-tid-002',
+        type: 'user_user',
+        initiatorId: `user:${MOCK_PERSONA.uid}`,
+        responderId: 'user:peer-uid-002',
+        status: 'matched',
+        matchScore: 84,
+        summary: 'Persona agent 與包裝設計取向的 peer 對話紀錄。',
+        userPresence: 'agent',
+        govPresence: 'agent',
+        peerPresence: 'agent',
+        createdAt: Date.now() - 1000 * 60 * 60 * 72,
+        updatedAt: Date.now() - 1000 * 60 * 60 * 70,
+      },
+      peer: {
+        uid: 'peer-uid-002',
+        displayName: '文組轉設計的karina',
+        summary: '廣告文案背景，目前在台北市設計培訓課，對品牌設計有興趣',
+      },
+      bullets: ['培訓課程名額比較到，先前先查', '文字能力是品牌設計的優勢，不用擔心'],
+    },
+  ]
+
+  app.get('/me/peer-threads', (_req, res) => {
+    res.json({ success: true, data: { items: mockPeerThreadItems, total: mockPeerThreadItems.length, hasMore: false } })
+  })
+
+  app.get('/me/peer-threads/:tid/messages', (req, res) => {
+    const msgs = [
+      {
+        mid: `${req.params.tid}-msg-1`,
+        tid: req.params.tid,
+        from: `coffee_agent:${MOCK_PERSONA.uid}`,
+        type: 'query',
+        content: { text: '你們兩個都是文組背景轉設計，應該有很多可以聊的！' },
+        createdAt: Date.now() - 1000 * 60 * 60 * 19,
+      },
+      {
+        mid: `${req.params.tid}-msg-2`,
+        tid: req.params.tid,
+        from: 'coffee_agent:peer',
+        type: 'answer',
+        content: { text: '對，我也覺得！你現在在學哪些設計工具呢？' },
+        createdAt: Date.now() - 1000 * 60 * 60 * 18,
+      },
+    ]
+    res.json({ success: true, data: { items: msgs, total: msgs.length, hasMore: false } })
+  })
+
   // Auth stub
   app.post('/auth/verify', (_req, res) => {
     res.json({ success: true, data: { uid: MOCK_PERSONA.uid, role: 'citizen' } })
@@ -195,7 +272,7 @@ export function startMockServer(port = 3001) {
       try {
         const msg = JSON.parse(raw.toString())
         if (msg.type === 'chat_message') {
-          const reply: ServerEvent = { type: 'agent_reply', content: '（mock）收到你的訊息，正在思考中...', done: true }
+          const reply: ServerEvent = { type: 'agent_reply', content: '我很想你...', done: true }
           socket.send(JSON.stringify(reply))
         }
       } catch { /* ignore malformed */ }
