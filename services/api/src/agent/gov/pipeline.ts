@@ -7,7 +7,7 @@ import {
 } from './toolWrappers/index.js'
 import type { GovToolRuntimeContext } from './toolWrappers/index.js'
 import { hasFirebaseAdminEnv } from '../../lib/firebaseEnv.js'
-import { channelReplies } from '../../lib/store.js'
+import { channelReplies, humanThreads } from '../../lib/store.js'
 import type { MatchDecision, MatchAssessment, GovAgentPipelineResult } from './types.js'
 
 export function parseMatchDecision(rawText: string): MatchDecision {
@@ -119,11 +119,40 @@ async function persistChannelReply(result: GovAgentPipelineResult): Promise<void
   }
 }
 
+async function persistHumanThread(result: GovAgentPipelineResult): Promise<void> {
+  const tid = `thread-${result.reply.replyId}`
+  const userId = result.assessment.channelMessage.uid
+
+  if (hasFirebaseAdminEnv()) {
+    const { createHumanThread } = await import('../../lib/humanThreadsRepo.js')
+    await createHumanThread({
+      tid,
+      userId,
+      govId: result.reply.govId,
+      channelReplyId: result.reply.replyId,
+      matchScore: result.reply.matchScore,
+    })
+  } else {
+    const now = Date.now()
+    humanThreads.set(tid, {
+      tid,
+      type: 'gov_user',
+      userId,
+      govId: result.reply.govId,
+      channelReplyId: result.reply.replyId,
+      matchScore: result.reply.matchScore,
+      status: 'open',
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+}
+
 export async function runGovAgentForChannelUpdate(
   sessionId: string,
   channelMessage: ChannelMessage,
   context: GovToolRuntimeContext & { resource?: GovernmentResource; resourceName?: string },
-  threshold = 70,
+  threshold = 10,
 ): Promise<GovAgentPipelineResult | null> {
   const stream = await client.beta.sessions.events.stream(sessionId)
 
@@ -261,8 +290,9 @@ export async function runGovAgentPipeline(
         console.log(`  -> Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
       } else {
         await persistChannelReply(result)
+        await persistHumanThread(result)
         results.push(result)
-        console.log(`  -> Channel reply persisted: ${result.reply.replyId}`)
+        console.log(`  -> Channel reply and human thread persisted: ${result.reply.replyId}`)
       }
     }
   }
