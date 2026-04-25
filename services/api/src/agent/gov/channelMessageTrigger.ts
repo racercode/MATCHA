@@ -60,17 +60,17 @@ export async function handleGovAgentRunForMessage(
 
   try {
     const resources = await listGovernmentResources()
-    const resourceAgents = await Promise.all(
-      resources.map(async resource => ({
-        resource,
-        sessionId: await initGovManagedAgentSession({
-          agencyId: resource.agencyId,
-          agencyName: resource.agencyName,
-          resourceId: resource.rid,
-          resourceName: resource.name,
-        }),
-      })),
-    )
+    const resourceAgents: Array<{ resource: typeof resources[number]; sessionId: string }> = []
+    for (const resource of resources) {
+      const sessionId = await initGovManagedAgentSession({
+        agencyId: resource.agencyId,
+        agencyName: resource.agencyName,
+        resourceId: resource.rid,
+        resourceName: resource.name,
+        sessionKey: messageId,
+      })
+      resourceAgents.push({ resource, sessionId })
+    }
 
     const matches = await runGovAgentPipeline(resourceAgents, [message], options.threshold)
     await completeGovAgentRun(messageId, {
