@@ -3,6 +3,7 @@ import { toMs, type ChannelReply as FirestoreChannelReply } from '@matcha/shared
 import { verifyToken, type AuthedRequest } from '../middleware/auth.js'
 import { hasFirebaseAdminEnv } from '../lib/firebaseEnv.js'
 import { auth, db } from '../lib/firebase.js'
+import { clearUserAgentSessions } from '../agent/general/agentRegistry.js'
 
 const router: IRouter = Router()
 router.use(verifyToken)
@@ -82,6 +83,31 @@ router.get('/me/persona', async (req, res) => {
   const { uid } = req as AuthedRequest
   const doc = await db.collection('personas').doc(uid).get()
   res.json({ success: true, data: doc.exists ? { uid, ...doc.data() } : null })
+})
+
+// POST /me/reset-memory
+router.post('/me/reset-memory', async (req, res) => {
+  const { uid } = req as AuthedRequest
+
+  try {
+    const clearedPersonaSessions = await clearUserAgentSessions(
+      'persona-agent-shared',
+      (session) => session.key === uid || session.key.startsWith(`${uid}:`),
+    )
+
+    res.json({
+      success: true,
+      data: {
+        clearedPersonaSessions,
+      },
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : '重置 memory 失敗',
+      data: null,
+    })
+  }
 })
 
 // GET /me/channel-replies — poll for GovAgent match replies

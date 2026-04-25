@@ -2,10 +2,12 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   StyleSheet,
@@ -73,6 +75,9 @@ type TextContent = { text: string };
 const PERSONA_AGENT_ID = 'gov:persona-agent-01';
 const AGENT_AVATAR = require('@/assets/icons/wife.jpg');
 const CARD_PREFETCH_MESSAGE = 'generate_swipe_card';
+const INITIAL_MESSAGE_BATCH = 30;
+const OLDER_MESSAGE_BATCH = 20;
+const LOAD_OLDER_THRESHOLD = 80;
 
 export const getPersonaThreadId = (uid: string) => `thread-persona-chat-${uid}`;
 
@@ -155,7 +160,7 @@ function PostPreviewCard({ content }: { content: PostPreviewContent }) {
   );
 }
 
-function TypingBubble({ text }: { text: string }) {
+const TypingBubble = memo(function TypingBubble({ text }: { text: string }) {
   return (
     <View style={[styles.messageRow, styles.messageRowOther]}>
       <Image source={AGENT_AVATAR} style={styles.avatar} contentFit="cover" />
@@ -164,9 +169,15 @@ function TypingBubble({ text }: { text: string }) {
       </View>
     </View>
   );
-}
+});
 
-function PersonaMessageBubble({ message, isOwnMessage }: { message: PersonaMessage; isOwnMessage: boolean }) {
+const PersonaMessageBubble = memo(function PersonaMessageBubble({
+  message,
+  isOwnMessage,
+}: {
+  message: PersonaMessage;
+  isOwnMessage: boolean;
+}) {
   const content = message.content;
 
   if (isPostPreview(content)) {
@@ -190,9 +201,15 @@ function PersonaMessageBubble({ message, isOwnMessage }: { message: PersonaMessa
       </View>
     </View>
   );
-}
+});
 
-function PeerMessageBubble({ message, isOwnMessage }: { message: PeerThreadMessage; isOwnMessage: boolean }) {
+const PeerMessageBubble = memo(function PeerMessageBubble({
+  message,
+  isOwnMessage,
+}: {
+  message: PeerThreadMessage;
+  isOwnMessage: boolean;
+}) {
   return (
     <View style={[styles.messageRow, isOwnMessage ? styles.messageRowOwn : styles.messageRowOther]}>
       {!isOwnMessage ? <Image source={AGENT_AVATAR} style={styles.avatar} contentFit="cover" /> : null}
@@ -201,7 +218,7 @@ function PeerMessageBubble({ message, isOwnMessage }: { message: PeerThreadMessa
       </View>
     </View>
   );
-}
+});
 
 const buildAuthedHeaders = async (): Promise<Record<string, string>> => {
   const token = await auth.currentUser?.getIdToken();
@@ -223,11 +240,16 @@ export default function ChatThreadScreen() {
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [isAwaitingPersonaReply, setIsAwaitingPersonaReply] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
+  const [hasMorePeerHistory, setHasMorePeerHistory] = useState(false);
   const [peerHistoryError, setPeerHistoryError] = useState<string | null>(null);
+  const [visiblePersonaCount, setVisiblePersonaCount] = useState(INITIAL_MESSAGE_BATCH);
+  const [visiblePeerCount, setVisiblePeerCount] = useState(INITIAL_MESSAGE_BATCH);
   const listRef = useRef<FlatList<PersonaMessage | PeerThreadMessage>>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const streamBufferRef = useRef('');
   const scrollFrameRef = useRef<number | null>(null);
+  const isLoadingOlderRef = useRef(false);
   const cardPrefetchCountRef = useRef(0);
   const cardPrefetchPendingRef = useRef(false);
 
@@ -239,10 +261,12 @@ export default function ChatThreadScreen() {
     params.kind === 'peer' || (routeTid != null && routeTid !== personaThreadId) ? 'peer' : 'persona';
   const activeThreadId = mode === 'peer' ? routeTid ?? '' : personaThreadId;
 
-  const visibleMessages = useMemo(
-    () => (mode === 'peer' ? peerMessages : personaMessages),
-    [mode, peerMessages, personaMessages],
-  );
+  const visibleMessages = useMemo(() => {
+    if (mode === 'peer') {
+      return peerMessages.slice(-visiblePeerCount);
+    }
+    return personaMessages.slice(-visiblePersonaCount);
+  }, [mode, peerMessages, personaMessages, visiblePeerCount, visiblePersonaCount]);
 
   const scrollToBottom = (animated = true) => {
     if (scrollFrameRef.current != null) {
@@ -266,6 +290,7 @@ export default function ChatThreadScreen() {
     if (mode === 'persona') {
       let isMounted = true;
       setIsLoadingHistory(true);
+      setVisiblePersonaCount(INITIAL_MESSAGE_BATCH);
       (async () => {
         try {
           const cached = await readCachedPersonaMessages(currentUserId);
@@ -308,6 +333,7 @@ export default function ChatThreadScreen() {
               createdAt: item.createdAt,
             }));
             setPersonaMessages(mapped);
+            setVisiblePersonaCount((prev) => Math.max(prev, Math.min(INITIAL_MESSAGE_BATCH, mapped.length)));
             await writeCachedPersonaMessages(
               currentUserId,
               items.map((item) => ({
@@ -322,12 +348,14 @@ export default function ChatThreadScreen() {
             }
           } else if (cached.length === 0) {
             setPersonaMessages(buildSeedMessages(personaThreadId, currentUserId));
+            setVisiblePersonaCount(INITIAL_MESSAGE_BATCH);
           }
         } catch {
           if (isMounted) {
             const cached = await readCachedPersonaMessages(currentUserId);
             if (cached.length === 0) {
               setPersonaMessages(buildSeedMessages(personaThreadId, currentUserId));
+              setVisiblePersonaCount(INITIAL_MESSAGE_BATCH);
             }
           }
         } finally {
@@ -341,15 +369,20 @@ export default function ChatThreadScreen() {
       let isMounted = true;
       setIsLoadingHistory(true);
       setPeerHistoryError(null);
+      setVisiblePeerCount(INITIAL_MESSAGE_BATCH);
       (async () => {
         try {
           const headers = await buildAuthedHeaders();
-          const res = await fetch(`${API_BASE_URL}/peer-threads/${activeThreadId}/messages`, { headers });
+          const res = await fetch(
+            `${API_BASE_URL}/peer-threads/${activeThreadId}/messages?limit=${INITIAL_MESSAGE_BATCH}`,
+            { headers },
+          );
           const json = await res.json();
           if (!isMounted) return;
           if (!res.ok || !json.success) throw new Error(json.error ?? '讀取對話失敗');
           const items = Array.isArray(json.data?.items) ? (json.data.items as PeerMessage[]) : [];
           setPeerMessages(items.map((message) => ({ ...message, tid: activeThreadId })));
+          setHasMorePeerHistory(Boolean(json.data?.hasMore));
         } catch (error) {
           if (!isMounted) return;
           setPeerHistoryError(error instanceof Error ? error.message : '讀取對話失敗');
@@ -521,6 +554,107 @@ export default function ChatThreadScreen() {
     scrollToBottom(false);
   }, [isLoadingHistory, visibleMessages.length]);
 
+  const loadOlderMessages = useCallback(async () => {
+    if (isLoadingOlderRef.current || isLoadingHistory) return;
+
+    if (mode === 'persona') {
+      if (visiblePersonaCount >= personaMessages.length) return;
+      isLoadingOlderRef.current = true;
+      setIsLoadingOlderMessages(true);
+      setVisiblePersonaCount((prev) => Math.min(prev + OLDER_MESSAGE_BATCH, personaMessages.length));
+      setIsLoadingOlderMessages(false);
+      isLoadingOlderRef.current = false;
+      return;
+    }
+
+    if (mode !== 'peer' || !activeThreadId) return;
+
+    if (visiblePeerCount < peerMessages.length) {
+      isLoadingOlderRef.current = true;
+      setIsLoadingOlderMessages(true);
+      setVisiblePeerCount((prev) => Math.min(prev + OLDER_MESSAGE_BATCH, peerMessages.length));
+      setIsLoadingOlderMessages(false);
+      isLoadingOlderRef.current = false;
+      return;
+    }
+
+    if (!hasMorePeerHistory || peerMessages.length === 0) return;
+
+    const oldestMessage = peerMessages[0];
+    const before = toMs(oldestMessage.createdAt);
+    isLoadingOlderRef.current = true;
+    setIsLoadingOlderMessages(true);
+
+    try {
+      const headers = await buildAuthedHeaders();
+      const res = await fetch(
+        `${API_BASE_URL}/peer-threads/${activeThreadId}/messages?before=${before}&limit=${OLDER_MESSAGE_BATCH}`,
+        { headers },
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error ?? '讀取更多對話失敗');
+
+      const items = Array.isArray(json.data?.items) ? (json.data.items as PeerMessage[]) : [];
+      const olderMessages = items.map((message) => ({ ...message, tid: activeThreadId }));
+
+      setPeerMessages((prev) => {
+        const existingIds = new Set(prev.map((message) => message.mid));
+        const mergedOlder = olderMessages.filter((message) => !existingIds.has(message.mid));
+        return [...mergedOlder, ...prev];
+      });
+      setVisiblePeerCount((prev) => prev + olderMessages.length);
+      setHasMorePeerHistory(Boolean(json.data?.hasMore));
+    } catch (error) {
+      console.warn('[Chat] load older messages failed', error);
+    } finally {
+      setIsLoadingOlderMessages(false);
+      isLoadingOlderRef.current = false;
+    }
+  }, [
+    activeThreadId,
+    hasMorePeerHistory,
+    isLoadingHistory,
+    mode,
+    peerMessages,
+    personaMessages.length,
+    visiblePeerCount,
+    visiblePersonaCount,
+  ]);
+
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (event.nativeEvent.contentOffset.y <= LOAD_OLDER_THRESHOLD) {
+        void loadOlderMessages();
+      }
+    },
+    [loadOlderMessages],
+  );
+
+  const renderMessage = useCallback(
+    ({ item, index }: { item: PersonaMessage | PeerThreadMessage; index: number }) => {
+      const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
+      const showTimestamp =
+        previousMessage == null ||
+        toMs(item.createdAt) - toMs(previousMessage.createdAt) > 1000 * 60 * 8;
+      const isOwnMessage =
+        mode === 'peer' ? item.from === `user:${currentUserId}` : item.from === `human:${currentUserId}`;
+
+      return (
+        <View style={styles.messageBlock}>
+          {showTimestamp ? (
+            <ThemedText style={styles.timestamp}>{formatTimeLabel(item.createdAt)}</ThemedText>
+          ) : null}
+          {mode === 'peer' ? (
+            <PeerMessageBubble message={item as PeerThreadMessage} isOwnMessage={isOwnMessage} />
+          ) : (
+            <PersonaMessageBubble message={item as PersonaMessage} isOwnMessage={isOwnMessage} />
+          )}
+        </View>
+      );
+    },
+    [currentUserId, mode, visibleMessages],
+  );
+
   const handleSend = () => {
     const content = draft.trim();
     if (!content || !activeThreadId) return;
@@ -594,34 +728,22 @@ export default function ChatThreadScreen() {
               data={visibleMessages}
               keyExtractor={(item) => item.mid}
               contentContainerStyle={styles.messagesContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
-            renderItem={({ item, index }) => {
-                const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
-                const showTimestamp =
-                  previousMessage == null ||
-                  toMs(item.createdAt) - toMs(previousMessage.createdAt) > 1000 * 60 * 8;
-                const isOwnMessage =
-                  mode === 'peer' ? item.from === `user:${currentUserId}` : item.from === `human:${currentUserId}`;
-
-                return (
-                  <View style={styles.messageBlock}>
-                    {showTimestamp ? (
-                      <ThemedText style={styles.timestamp}>{formatTimeLabel(item.createdAt)}</ThemedText>
-                    ) : null}
-                    {mode === 'peer' ? (
-                      <PeerMessageBubble message={item as PeerThreadMessage} isOwnMessage={isOwnMessage} />
-                    ) : (
-                      <PersonaMessageBubble message={item as PersonaMessage} isOwnMessage={isOwnMessage} />
-                    )}
-                  </View>
-                );
-              }}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+              renderItem={renderMessage}
+              onScroll={handleListScroll}
+              scrollEventThrottle={16}
+              initialNumToRender={12}
+              maxToRenderPerBatch={8}
+              windowSize={7}
+              removeClippedSubviews={Platform.OS === 'android'}
               ListHeaderComponent={
                 isLoadingHistory ? (
                   <ThemedText style={styles.statusText}>載入對話中…</ThemedText>
+                ) : isLoadingOlderMessages ? (
+                  <ThemedText style={styles.statusText}>載入更早的對話…</ThemedText>
                 ) : peerHistoryError ? (
                   <ThemedText style={styles.errorText}>{peerHistoryError}</ThemedText>
                 ) : null
