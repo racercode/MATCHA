@@ -8,7 +8,7 @@ import { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore'
 import { msToTimestamp, toMs, type ChannelReply } from '@matcha/shared-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') })
+dotenv.config({ path: path.resolve(__dirname, '../../.env') })
 
 const hasFirebaseEnv = Boolean(
   process.env.FIREBASE_PROJECT_ID &&

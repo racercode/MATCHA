@@ -12,7 +12,7 @@ import {
 } from '../general/agentRegistry.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: path.resolve(__dirname, '../../../../../.env') })
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') })
 
 if (!globalThis.File) {
   globalThis.File = File as unknown as typeof globalThis.File
