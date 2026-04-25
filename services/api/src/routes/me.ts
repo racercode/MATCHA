@@ -1,9 +1,23 @@
 import { Router, type Router as IRouter } from 'express'
+import { toMs, type ChannelReply as FirestoreChannelReply } from '@matcha/shared-types'
 import { verifyToken, type AuthedRequest } from '../middleware/auth.js'
+import { hasFirebaseAdminEnv } from '../lib/firebaseEnv.js'
 import { db } from '../lib/firebase.js'
 
 const router: IRouter = Router()
 router.use(verifyToken)
+
+function serializeChannelReply(reply: FirestoreChannelReply) {
+  return {
+    replyId: reply.replyId,
+    messageId: reply.messageId,
+    govId: reply.govId,
+    govName: reply.govId,
+    content: reply.content,
+    matchScore: reply.matchScore,
+    createdAt: toMs(reply.createdAt),
+  }
+}
 
 // GET /me/persona
 router.get('/me/persona', async (req, res) => {
@@ -17,6 +31,27 @@ router.get('/me/channel-replies', async (req, res) => {
   const { uid } = req as AuthedRequest
   const since = Number(req.query.since) || 0
   const limit = Math.min(Number(req.query.limit) || 20, 100)
+
+  if (hasFirebaseAdminEnv()) {
+    try {
+      const { listChannelRepliesForUser } = await import('../lib/channelRepliesRepo.js')
+      const replies = await listChannelRepliesForUser(uid, { since, limit: limit + 1 })
+      res.json({
+        success: true,
+        data: {
+          items: replies.slice(0, limit).map(serializeChannelReply),
+          hasMore: replies.length > limit,
+        },
+      })
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : '讀取 Firestore channel replies 失敗',
+        data: null,
+      })
+    }
+    return
+  }
 
   const msgsSnap = await db.collection('channel_messages').where('uid', '==', uid).get()
   const myMsgIds = new Set(msgsSnap.docs.map(d => d.id))

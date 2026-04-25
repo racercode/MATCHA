@@ -388,6 +388,103 @@ interface ChannelMessage {
 
 ---
 
+### `POST /gov/agent/run-message`
+
+Firebase trigger target。當 `channel_messages/{messageId}` 新增後，trigger POST 這支 API，Gov backend 會從 Firestore 讀取該 channel message 與所有 `gov_resources`，再叫所有 Resource Agents 判斷是否 match。
+
+這支 endpoint 第一版不需要 `Authorization` header。
+
+**Request body**
+
+```json
+{
+  "messageId": "msg-channel-xiaoya-001",
+  "threshold": 70
+}
+```
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `messageId` | string | 必填，Firestore `channel_messages/{messageId}` 的 document id |
+| `threshold` | number | 選填，媒合分數門檻，0–100，預設 70 |
+
+**Backend flow**
+
+```txt
+messageId
+-> read Firestore channel_messages/{messageId}
+-> read Firestore gov_resources
+-> init/reuse one Resource Agent per resource
+-> runGovAgentPipeline(resourceAgents, [message])
+-> write Firestore channel_replies
+```
+
+**Idempotency**
+
+後端會使用：
+
+```txt
+gov_agent_runs/{messageId}
+```
+
+如果同一個 `messageId` 已經是 `running` 或 `completed`，會直接回傳 skipped，不會重複跑所有 agents。
+
+**Response `200` — processed**
+
+```json
+{
+  "success": true,
+  "data": {
+    "messageId": "msg-channel-xiaoya-001",
+    "skipped": false,
+    "resourceCount": 3,
+    "matchCount": 1,
+    "threshold": 70,
+    "matches": [
+      {
+        "reply": {
+          "replyId": "reply-gov-rid-design-intern-002-msg-channel-xiaoya-001",
+          "messageId": "msg-channel-xiaoya-001",
+          "govId": "rid-design-intern-002",
+          "content": "使用者明確提到品牌設計與實習需求，符合創意產業實習媒合計畫。",
+          "matchScore": 90,
+          "createdAt": {
+            "seconds": 1714000000,
+            "nanoseconds": 0
+          }
+        },
+        "reason": "使用者明確提到品牌設計與實習需求，符合創意產業實習媒合計畫。",
+        "missingInfo": [],
+        "assessment": {}
+      }
+    ]
+  }
+}
+```
+
+**Response `200` — skipped**
+
+```json
+{
+  "success": true,
+  "data": {
+    "messageId": "msg-channel-xiaoya-001",
+    "skipped": true,
+    "status": "completed"
+  }
+}
+```
+
+**Errors**
+
+| 狀態碼 | 情境 |
+|------|------|
+| `400` | `messageId` 缺少或不是非空字串，或 `threshold` 不是 0–100 整數 |
+| `404` | 找不到 Firestore `channel_messages/{messageId}` |
+| `500` | Firebase Admin env 未設定、讀取 Firestore 失敗、Gov Agent session 初始化或 pipeline 執行失敗 |
+
+---
+
 ### `GET /gov/channel-replies`
 
 列出 GovAgent 發出的所有媒合回覆，並 join 市民 summary 供 Dashboard 顯示。

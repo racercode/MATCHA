@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test'
+import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { toMs } from '@matcha/shared-types'
 import { parseMatchDecision } from './pipeline.js'
@@ -150,12 +150,23 @@ describe('queryResourcePdfToolWrapper', () => {
 // ---------------------------------------------------------------------------
 
 describe('writeChannelReplyToolWrapper', () => {
+  const originalFirebasePrivateKey = process.env.FIREBASE_PRIVATE_KEY
   const mockDecision: MatchDecision = {
     eligible: true,
     score: 90,
     reason: '使用者需求與資源高度匹配',
     missingInfo: [],
   }
+
+  before(() => {
+    delete process.env.FIREBASE_PRIVATE_KEY
+  })
+
+  after(() => {
+    if (originalFirebasePrivateKey) {
+      process.env.FIREBASE_PRIVATE_KEY = originalFirebasePrivateKey
+    }
+  })
 
   it('creates a channel reply with correct shape', async () => {
     const assessment: MatchAssessment = {

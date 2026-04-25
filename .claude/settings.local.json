@@ -20,7 +20,13 @@
       "Bash(curl *)",
       "Bash(pkill -f \"node.*index.ts\")",
       "Bash(taskkill /F /IM node.exe)",
-      "Bash(powershell -Command \"Get-Process node | Stop-Process -Force\")"
+      "Bash(powershell -Command \"Get-Process node | Stop-Process -Force\")",
+      "Bash(pnpm --filter @matcha/api tsc --noEmit)",
+      "Bash(grep -E \"\\\\.\\(ts|js|json\\)$\")",
+      "PowerShell(cd C:\\\\Users\\\\gary9\\\\programming\\\\ytp\\\\services\\\\api; npx tsc --noEmit 2>&1; echo \"Exit: $LASTEXITCODE\")",
+      "Bash(grep -E \"\\\\.\\(ts|md|json\\)$\")",
+      "Bash(git -C \"C:/Users/gary9/programming/ytp\" show HEAD:services/api/src/lib/firebase.ts)",
+      "Bash(git *)"
     ]
   }
 }

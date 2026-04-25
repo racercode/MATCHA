@@ -188,8 +188,12 @@ export type ClientEvent =
 export type ServerEvent =
   // PersonaAgent streaming reply (one event per token, done=true signals end)
   | { type: 'agent_reply'; content: string; done: boolean }
+  // PersonaAgent swipe card pushed to the user for interactive preference gathering
+  | { type: 'swipe_card'; card: SwipeCard }
   // CoffeeAgent relay pushed to both thread participants
   | { type: 'peer_message'; message: PeerMessage }
+  // CoffeeAgent peer match notification pushed when a new thread is created
+  | { type: 'match_notify'; threadId: string; peer: PeerPreview }
   // Human thread message pushed to the other party
   | { type: 'human_message'; message: HumanMessage }
   | { type: 'error'; code: string; message: string }

@@ -10,7 +10,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "gov:run": "tsx src/agent/gov/main.ts",
-    "gov:test": "node --import tsx --test src/agent/gov/pipeline.test.ts src/routes/gov.test.ts"
+    "gov:test": "tsx --test src/agent/gov/pipeline.test.ts src/routes/gov.test.ts src/lib/channelRepliesRepo.test.ts"
   },
   "dependencies": {
     "@matcha/shared-types": "workspace:*",

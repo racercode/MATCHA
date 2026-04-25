@@ -1,5 +1,9 @@
 packages:
-  - 'apps/*'
-  - 'apps/*/*'
-  - 'services/*'
-  - 'packages/*'
+  - apps/*
+  - apps/*/*
+  - services/*
+  - packages/*
+
+ignoredBuiltDependencies:
+  - '@firebase/util'
+  - unrs-resolver

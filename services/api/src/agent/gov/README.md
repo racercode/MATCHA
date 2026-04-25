@@ -5,7 +5,7 @@
 ## 前置需求
 
 - Node.js >= 18
-- 專案根目錄 `.env` 裡要有 `ANTHROPIC_API_KEY`
+- `services/api/.env` 裡要有 `ANTHROPIC_API_KEY`
 
 ## 檔案結構
 

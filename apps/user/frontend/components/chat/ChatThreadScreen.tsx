@@ -193,7 +193,8 @@ export default function ChatThreadScreen() {
 
   // WebSocket connection
   useEffect(() => {
-    const ws = new WebSocket(WS_URL);
+    if (!currentUserId) return;
+    const ws = new WebSocket(`${WS_URL}?token=${currentUserId}`);
     wsRef.current = ws;
 
     ws.onopen = () => {

@@ -118,8 +118,15 @@ export type ServerEvent = {
     content: string;
     done: boolean;
 } | {
+    type: 'swipe_card';
+    card: SwipeCard;
+} | {
     type: 'peer_message';
     message: PeerMessage;
+} | {
+    type: 'match_notify';
+    threadId: string;
+    peer: PeerPreview;
 } | {
     type: 'human_message';
     message: HumanMessage;
