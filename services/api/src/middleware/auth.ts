@@ -35,10 +35,11 @@ export async function verifyToken(req: Request, res: Response, next: NextFunctio
     const authed = req as AuthedRequest
     authed.uid = uid
 
-    const staffDoc = await db.collection('gov_staff').doc(uid).get()
-    if (staffDoc.exists) {
+    const staffSnap = await db.collection('gov_staff').where('uid', '==', uid).limit(1).get()
+    const staffDoc = staffSnap.docs[0]
+    if (staffDoc) {
       authed.role = 'gov_staff'
-      authed.govId = staffDoc.data()!.govId as string
+      authed.govId = staffDoc.data().govId as string
     } else {
       authed.role = 'citizen'
     }

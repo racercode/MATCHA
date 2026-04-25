@@ -13,9 +13,10 @@ router.post('/auth/verify', async (req, res) => {
   try {
     const decoded = await auth.verifyIdToken(idToken)
     const uid = decoded.uid
-    const staffDoc = await db.collection('gov_staff').doc(uid).get()
-    if (staffDoc.exists) {
-      res.json({ success: true, data: { uid, role: 'gov_staff', govId: staffDoc.data()!.govId } })
+    const staffSnap = await db.collection('gov_staff').where('uid', '==', uid).limit(1).get()
+    const staffDoc = staffSnap.docs[0]
+    if (staffDoc) {
+      res.json({ success: true, data: { uid, role: 'gov_staff', govId: staffDoc.data().govId } })
     } else {
       res.json({ success: true, data: { uid, role: 'citizen' } })
     }

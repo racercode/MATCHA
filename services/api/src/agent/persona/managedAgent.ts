@@ -83,12 +83,19 @@ const PERSONA_CUSTOM_TOOLS = [
   },
 ]
 
-async function findExistingPersonaSkills(): Promise<Map<string, string>> {
+async function listAllSkills(): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   for await (const skill of client.beta.skills.list()) {
-    if (skill.display_title?.startsWith('MATCHA Persona ')) {
-      map.set(skill.display_title, skill.id)
-    }
+    if (skill.display_title) map.set(skill.display_title, skill.id)
+  }
+  return map
+}
+
+async function findExistingPersonaSkills(): Promise<Map<string, string>> {
+  const all = await listAllSkills()
+  const map = new Map<string, string>()
+  for (const [title, id] of all) {
+    if (title.startsWith('MATCHA Persona ')) map.set(title, id)
   }
   return map
 }
@@ -101,21 +108,30 @@ async function createPersonaSkill(skillName: string, existing: Map<string, strin
   const skillPath = path.join(__dirname, 'skills', skillName, 'SKILL.md')
   const content = await readFile(skillPath, 'utf8')
   const file = await Anthropic.toFile(Buffer.from(content, 'utf8'), `${skillName}/SKILL.md`)
-  const skill = await client.beta.skills.create({
-    display_title: displayTitle,
-    files: [file],
-  })
-  return skill.id
+  try {
+    const skill = await client.beta.skills.create({
+      display_title: displayTitle,
+      files: [file],
+    })
+    return skill.id
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('display_title') || msg.includes('reuse')) {
+      const all = await listAllSkills()
+      const id = all.get(displayTitle)
+      if (id) return id
+    }
+    throw err
+  }
 }
 
 async function createPersonaSkills(): Promise<string[]> {
   const existing = await findExistingPersonaSkills()
-  return Promise.all([
-    createPersonaSkill('get_my_persona', existing),
-    createPersonaSkill('update_persona', existing),
-    createPersonaSkill('publish_to_channel', existing),
-    createPersonaSkill('generate_swipe_card', existing),
-  ])
+  const ids: string[] = []
+  for (const name of ['get_my_persona', 'update_persona', 'publish_to_channel', 'generate_swipe_card']) {
+    ids.push(await createPersonaSkill(name, existing))
+  }
+  return ids
 }
 
 function toSkillParams(skillIds: string[]) {

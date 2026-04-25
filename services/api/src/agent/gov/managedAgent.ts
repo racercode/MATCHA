@@ -80,12 +80,19 @@ const GOV_CUSTOM_TOOLS = [
   },
 ]
 
-async function findExistingSkills(): Promise<Map<string, string>> {
+async function listAllSkills(): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   for await (const skill of client.beta.skills.list()) {
-    if (skill.display_title?.startsWith('MATCHA Gov ')) {
-      map.set(skill.display_title, skill.id)
-    }
+    if (skill.display_title) map.set(skill.display_title, skill.id)
+  }
+  return map
+}
+
+async function findExistingSkills(): Promise<Map<string, string>> {
+  const all = await listAllSkills()
+  const map = new Map<string, string>()
+  for (const [title, id] of all) {
+    if (title.startsWith('MATCHA Gov ')) map.set(title, id)
   }
   return map
 }
@@ -93,27 +100,35 @@ async function findExistingSkills(): Promise<Map<string, string>> {
 async function createGovSkill(skillName: string, existing: Map<string, string>): Promise<string> {
   const displayTitle = `MATCHA Gov ${skillName} (${GOV_AGENT_CONFIG_VERSION})`
   const existingId = existing.get(displayTitle)
-  if (existingId) {
-    return existingId
-  }
+  if (existingId) return existingId
 
   const skillPath = path.join(__dirname, 'skills', skillName, 'SKILL.md')
   const content = await readFile(skillPath, 'utf8')
   const file = await Anthropic.toFile(Buffer.from(content, 'utf8'), `${skillName}/SKILL.md`)
-  const skill = await client.beta.skills.create({
-    display_title: displayTitle,
-    files: [file],
-  })
-
-  return skill.id
+  try {
+    const skill = await client.beta.skills.create({
+      display_title: displayTitle,
+      files: [file],
+    })
+    return skill.id
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('display_title') || msg.includes('reuse')) {
+      const all = await listAllSkills()
+      const id = all.get(displayTitle)
+      if (id) return id
+    }
+    throw err
+  }
 }
 
 async function createGovSkills(): Promise<string[]> {
   const existing = await findExistingSkills()
-  return Promise.all([
-    createGovSkill('read_channel', existing),
-    createGovSkill('query_resource_pdf', existing),
-  ])
+  const ids: string[] = []
+  for (const name of ['read_channel', 'query_resource_pdf']) {
+    ids.push(await createGovSkill(name, existing))
+  }
+  return ids
 }
 
 function toSkillParams(skillIds: string[]) {

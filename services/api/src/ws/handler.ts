@@ -271,9 +271,10 @@ export async function upgradeHandler(
     return
   }
 
-  const staffDoc = await db.collection('gov_staff').doc(uid).get()
-  const role: 'citizen' | 'gov_staff' = staffDoc.exists ? 'gov_staff' : 'citizen'
-  const govId = staffDoc.exists ? (staffDoc.data()!.govId as string) : undefined
+  const staffSnap = await db.collection('gov_staff').where('uid', '==', uid).limit(1).get()
+  const staffDoc = staffSnap.docs[0]
+  const role: 'citizen' | 'gov_staff' = staffDoc ? 'gov_staff' : 'citizen'
+  const govId = staffDoc ? (staffDoc.data().govId as string) : undefined
 
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req, uid, role, govId)
