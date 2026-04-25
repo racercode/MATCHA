@@ -69,17 +69,18 @@ export async function proposePeerMatchToolWrapper(input: ProposePeerMatchInput):
 
   console.log(`[Coffee Agent] Peer match created: ${tid} (${userAId} ↔ ${userBId})`)
 
+  const toArr = (v: unknown): string[] => Array.isArray(v) ? v as string[] : typeof v === 'string' && v ? [v] : []
   const fallbackA = {
     displayName: (peerA.displayName as string) ?? userAId.slice(0, 8),
     summary: (peerA.summary as string) ?? rationale,
-    needs: (peerA.needs as string[]) ?? [],
-    offers: (peerA.offers as string[]) ?? [],
+    needs: toArr(peerA.needs),
+    offers: toArr(peerA.offers),
   }
   const fallbackB = {
     displayName: (peerB.displayName as string) ?? userBId.slice(0, 8),
     summary: (peerB.summary as string) ?? rationale,
-    needs: (peerB.needs as string[]) ?? [],
-    offers: (peerB.offers as string[]) ?? [],
+    needs: toArr(peerB.needs),
+    offers: toArr(peerB.offers),
   }
 
   // Fire-and-forget: run agent-to-agent intro conversation

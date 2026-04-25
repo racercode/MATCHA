@@ -48,7 +48,7 @@ export default function CafeChatScreen() {
   useAuth();
   const [items, setItems] = useState<PeerThreadListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isInsightModalVisible, setIsInsightModalVisible] = useState(true);
+  const [isInsightModalVisible, setIsInsightModalVisible] = useState(false);
 
   const fetchThreads = useCallback(async () => {
     setIsLoading(true);
