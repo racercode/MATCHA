@@ -1,5 +1,4 @@
 import type { GovernmentResource } from '@matcha/shared-types'
-import { fakeGovernmentResources } from '../fakeData.js'
 
 export interface QueryResourcePdfInput {
   includeDetails?: boolean
@@ -8,6 +7,7 @@ export interface QueryResourcePdfInput {
 export interface GovToolRuntimeContext {
   agencyId: string
   resourceId: string
+  resource?: GovernmentResource
 }
 
 export interface QueryResourcePdfOutput {
@@ -18,9 +18,8 @@ export function queryResourcePdfToolWrapper(
   _input: QueryResourcePdfInput | undefined,
   context: GovToolRuntimeContext,
 ): QueryResourcePdfOutput {
-  const resources = fakeGovernmentResources.filter(
-    r => r.agencyId === context.agencyId && r.rid === context.resourceId,
-  )
-
-  return { resources }
+  if (context.resource) {
+    return { resources: [context.resource] }
+  }
+  return { resources: [] }
 }

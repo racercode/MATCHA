@@ -13,9 +13,9 @@ export function createApp(): Express {
   app.get('/health', (_req, res) => res.json({ ok: true }))
 
   app.use(authRouter)
+  app.use(govRouter)
   app.use(meRouter)
   app.use(threadsRouter)
-  app.use(govRouter)
 
   app.use((_req, res) => {
     res.status(404).json({ success: false, error: '路由不存在', data: null })

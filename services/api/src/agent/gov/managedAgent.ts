@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const GOV_AGENT_MODEL = 'claude-haiku-4-5'
-const GOV_AGENT_CONFIG_VERSION = 'gov-backend-persist-channel-reply-v1'
+const GOV_AGENT_CONFIG_VERSION = 'persist-v1'
 const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 const DEFAULT_AGENCY_NAME = '臺北市青年局'
 const DEFAULT_SESSION_KEY = 'default'
@@ -240,7 +240,7 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
   const session = await client.beta.sessions.create({
     agent: agentId,
     environment_id: environmentId,
-    title: `MATCHA Gov Resource Agent Session (${agentScope}:${sessionKey})`,
+    title: `gov-${resourceId.slice(0, 30)}-${sessionKey}`.slice(0, 64),
   })
 
   const nextRecord: GovernmentAgentRecord = {
@@ -256,7 +256,7 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
     sessions: upsertSession(record.sessions, {
       key: sessionKey,
       sessionId: session.id,
-      title: `MATCHA Gov Resource Agent Session (${agentScope}:${sessionKey})`,
+      title: `gov-${resourceId.slice(0, 30)}-${sessionKey}`.slice(0, 64),
       createdAt: now,
       updatedAt: now,
     }),

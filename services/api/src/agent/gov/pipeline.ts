@@ -58,11 +58,26 @@ async function executeGovCustomTool(
   }
 }
 
+function extractDecisionText(rawText: string): string {
+  const cleaned = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+  try { JSON.parse(cleaned); return cleaned } catch { /* not pure JSON */ }
+  const lastBrace = cleaned.lastIndexOf('}')
+  if (lastBrace !== -1) {
+    let depth = 0
+    for (let i = lastBrace; i >= 0; i--) {
+      if (cleaned[i] === '}') depth++
+      else if (cleaned[i] === '{') { depth--; if (depth === 0) return cleaned.slice(i, lastBrace + 1) }
+    }
+  }
+  if (/\bnull\s*$/.test(cleaned)) return 'null'
+  return cleaned
+}
+
 function parseGovAgentFinalResponse(
   rawText: string,
   assessmentBase: Pick<MatchAssessment, 'channelMessage' | 'resource'>,
 ): GovAgentPipelineResult | null {
-  const cleaned = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
+  const cleaned = extractDecisionText(rawText)
   if (!cleaned || cleaned === 'null') return null
 
   try {

@@ -17,10 +17,14 @@ export async function publishToChannelToolWrapper(
     createdAt: Date.now(),
   })
 
-  // Fire-and-forget: trigger Coffee Agent matching in background
+  // Fire-and-forget: trigger Coffee Agent and Gov Agent in background
   import('../../coffee/pipeline.js')
     .then(({ triggerCoffeeMatch }) => triggerCoffeeMatch(msgId))
     .catch(err => console.error('[publishToChannel] coffee trigger error:', err))
+
+  import('../../gov/channelMessageTrigger.js')
+    .then(({ handleGovAgentRunForMessage }) => handleGovAgentRunForMessage(msgId))
+    .catch(err => console.error('[publishToChannel] gov trigger error:', err))
 
   return { msgId, published: true }
 }
