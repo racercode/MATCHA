@@ -31,7 +31,7 @@ graph TB
         WEB_UPLOAD["📁 Resource Upload"]
     end
 
-    subgraph "Backend — Fastify"
+    subgraph "Backend — Express"
         API["REST + WebSocket API"]
         PERSONA_AGENT["Persona Agent\n(Claude Managed)"]
         COFFEE_AGENT["Coffee Agent\n(Claude Managed)"]
@@ -88,7 +88,7 @@ graph TB
 |------|------|------|
 | User App | React Native + Expo | iOS / Android 市民端 |
 | Gov App | Next.js 15 + App Router | 政府 Web Dashboard |
-| Backend | Fastify (Node.js + TypeScript) | API、Agent 呼叫、WebSocket |
+| Backend | Express (Node.js + TypeScript) | API、Agent 呼叫、WebSocket |
 | AI | Claude Sessions API (Managed Agents) | Persona / Coffee / Gov Agent |
 | Auth | Firebase Auth | 雙端共用登入 |
 | DB | Firestore | persona、thread、match、resource 持久化 |
@@ -104,10 +104,10 @@ graph TB
 ```
 matcha/
 ├── apps/
-│   ├── mobile/          # Group A — React Native + Expo
-│   └── web/             # Group B — Next.js 15
+│   ├── user/          # Group A — React Native + Expo
+│   └── gov/             # Group B — Next.js 15
 ├── services/
-│   └── api/             # Group C — Fastify backend
+│   └── api/             # Group C — Express backend
 ├── packages/
 │   └── shared-types/    # 所有人共用，最先定義
 └── pnpm-workspace.yaml
@@ -314,7 +314,7 @@ GET    /gov/dashboard            媒合統計數據
 |------|------|----------|
 | **Group A** | React Native 市民端 | Persona Chat、Swipe、Match Dashboard、**Coffee Chat**、通知 |
 | **Group B** | Next.js 政府端 | 資源管理、Thread 監控、統計 Dashboard、承辦人介入 |
-| **Group C** | Fastify 後端 + Agents | API、Persona Agent、Gov Agent、**Coffee Agent**、Firebase 整合、WebSocket |
+| **Group C** | Express 後端 + Agents | API、Persona Agent、Gov Agent、**Coffee Agent**、Firebase 整合、WebSocket |
 
 ---
 

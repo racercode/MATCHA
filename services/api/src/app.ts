@@ -1,11 +1,11 @@
-import express from 'express'
+import express, { type Express } from 'express'
 import cors from 'cors'
 import authRouter from './routes/auth.js'
 import meRouter from './routes/me.js'
 import threadsRouter from './routes/threads.js'
 import govRouter from './routes/gov.js'
 
-export function createApp() {
+export function createApp(): Express {
   const app = express()
   app.use(cors())
   app.use(express.json())

@@ -9,7 +9,7 @@
  */
 
 import http from 'http'
-import express from 'express'
+import express, { type Express } from 'express'
 import cors from 'cors'
 import { WebSocketServer, WebSocket } from 'ws'
 import {
@@ -22,7 +22,7 @@ import {
   type ThreadMessage,
 } from '@matcha/shared-types'
 
-export function createMockApp() {
+export function createMockApp(): Express {
   const app = express()
   app.use(cors())
   app.use(express.json())

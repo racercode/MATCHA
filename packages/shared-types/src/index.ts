@@ -109,6 +109,9 @@ export interface AgentThread {
   // peerPresence tracks the responder's side
   peerPresence?: PresenceState
 
+  // set when a gov_staff human joins; needed to push WS events to them
+  govStaffUid?: string
+
   createdAt: number
   updatedAt: number
 }
@@ -153,6 +156,8 @@ export type SwipeDirection = 'left' | 'right'
 export type ClientEvent =
   | { type: 'chat_message'; content: string }
   | { type: 'swipe'; direction: SwipeDirection; cardId: string; value: string }
+  | { type: 'subscribe_thread'; threadId: string }
+  | { type: 'unsubscribe_thread'; threadId: string }
   | { type: 'human_join'; threadId: string }
   | { type: 'human_leave'; threadId: string }
   | { type: 'thread_message'; threadId: string; content: string }

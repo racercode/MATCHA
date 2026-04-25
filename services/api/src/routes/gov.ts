@@ -1,7 +1,7 @@
-import { Router } from 'express'
+import { Router, type Router as IRouter } from 'express'
 import { verifyToken, requireGovStaff, type AuthedRequest } from '../middleware/auth.js'
 
-const router = Router()
+const router: IRouter = Router()
 router.use(verifyToken, requireGovStaff)
 
 router.get('/gov/resources', async (req, res) => {

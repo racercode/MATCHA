@@ -58,6 +58,7 @@ export interface AgentThread {
     userPresence: PresenceState;
     govPresence: PresenceState;
     peerPresence?: PresenceState;
+    govStaffUid?: string;
     createdAt: number;
     updatedAt: number;
 }
@@ -88,6 +89,12 @@ export type ClientEvent = {
     direction: SwipeDirection;
     cardId: string;
     value: string;
+} | {
+    type: 'subscribe_thread';
+    threadId: string;
+} | {
+    type: 'unsubscribe_thread';
+    threadId: string;
 } | {
     type: 'human_join';
     threadId: string;

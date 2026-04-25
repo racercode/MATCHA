@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pnpm install *)"
+      "Bash(pnpm install *)",
+      "Bash(pnpm --filter @matcha/shared-types build)",
+      "Bash(pnpm --filter @matcha/api typecheck)",
+      "Bash(pnpm --filter @matcha/api exec tsc --noEmit)",
+      "Bash(npx tsc *)"
     ]
   }
 }

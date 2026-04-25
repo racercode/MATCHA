@@ -1,7 +1,7 @@
-import { Router } from 'express'
+import { Router, type Router as IRouter } from 'express'
 import { verifyToken, type AuthedRequest } from '../middleware/auth.js'
 
-const router = Router()
+const router: IRouter = Router()
 router.use(verifyToken)
 
 router.get('/threads', async (req, res) => {
@@ -26,7 +26,7 @@ router.get('/threads/:tid/messages', async (req, res) => {
 
 router.post('/threads/:tid/message', async (req, res) => {
   const { tid } = req.params
-  const { uid } = req as AuthedRequest
+  const { uid } = req as unknown as AuthedRequest
   const { content } = req.body
   if (!content) {
     res.status(400).json({ success: false, error: '缺少 content', data: null })
@@ -46,14 +46,14 @@ router.post('/threads/:tid/message', async (req, res) => {
 
 router.post('/threads/:tid/join', async (req, res) => {
   const { tid } = req.params
-  const { uid, role } = req as AuthedRequest
+  const { uid, role } = req as unknown as AuthedRequest
   // TODO: update presence in Firestore, broadcast presence_update via WS
   res.json({ success: true, data: { tid, userPresence: 'human', govPresence: 'agent' } })
 })
 
 router.post('/threads/:tid/leave', async (req, res) => {
   const { tid } = req.params
-  const { uid, role } = req as AuthedRequest
+  const { uid, role } = req as unknown as AuthedRequest
   // TODO: update presence in Firestore, broadcast presence_update via WS
   res.json({ success: true, data: { tid, userPresence: 'agent', govPresence: 'agent' } })
 })

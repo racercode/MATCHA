@@ -1,8 +1,8 @@
-import { Router } from 'express'
+import { Router, type Router as IRouter } from 'express'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
 
-const router = Router()
+const router: IRouter = Router()
 
 router.post('/auth/verify', async (req, res) => {
   const { idToken } = req.body
