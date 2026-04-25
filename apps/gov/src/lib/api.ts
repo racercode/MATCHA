@@ -1,5 +1,5 @@
 import { auth } from './firebase'
-import type { ChannelReply, HumanThread, HumanMessage, GovernmentResource, DashboardStats } from '@/types'
+import type { ChannelReply, HumanThread, HumanMessage, GovernmentResource, DashboardStats, ChannelMessageItem } from '@/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
@@ -82,6 +82,11 @@ export async function uploadResourceDocument(rid: string, file: File): Promise<v
     body: form,
   })
   if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
+}
+
+export async function getChannelMessages(limit = 30): Promise<ChannelMessageItem[]> {
+  const data = await apiFetch<{ items: ChannelMessageItem[] }>(`/gov/channel-messages?limit=${limit}`)
+  return data.items
 }
 
 export async function getDashboard(): Promise<DashboardStats> {

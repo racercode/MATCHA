@@ -67,6 +67,25 @@ export interface DashboardStats {
   }
 }
 
+export interface ChannelReplyForChannel {
+  replyId: string
+  govId: string
+  content: string
+  matchScore: number
+  createdAt: number
+  humanThreadOpened: boolean
+  humanThreadId?: string | null
+}
+
+export interface ChannelMessageItem {
+  msgId: string
+  uid: string
+  summary: string
+  publishedAt: number
+  citizen: CitizenInfo
+  replies: ChannelReplyForChannel[]
+}
+
 export interface CreateResourcePayload {
   rid?: string
   agencyId?: string

@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/lib/AuthContext'
 
 const NAV = [
+  { label: '頻道', href: '/channel' },
   { label: 'Thread 管理', href: '/threads' },
   { label: '資源管理', href: '/resources' },
   { label: '統計 Dashboard', href: '/dashboard' },
@@ -24,7 +25,7 @@ export default function Sidebar() {
       flexShrink: 0,
     }}>
       <div style={{ padding: '0 20px', marginBottom: 32 }}>
-        <span style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-0.02em' }}>
+        <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.02em' }}>
           Matcha Gov
         </span>
       </div>
@@ -38,7 +39,8 @@ export default function Sidebar() {
                 href={item.href}
                 style={{
                   display: 'block',
-                  padding: '8px 20px',
+                  padding: '9px 20px',
+                  fontSize: 15,
                   color: active ? 'var(--primary)' : 'var(--text)',
                   background: active ? '#eff6ff' : 'transparent',
                   fontWeight: active ? 500 : 400,
