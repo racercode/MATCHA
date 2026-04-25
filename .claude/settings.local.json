@@ -5,7 +5,22 @@
       "Bash(pnpm --filter @matcha/shared-types build)",
       "Bash(pnpm --filter @matcha/api typecheck)",
       "Bash(pnpm --filter @matcha/api exec tsc --noEmit)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(cp \"C:/Users/gary9/programming/ytp/services/api/src/agents/user/persona.ts\" /tmp/check.ts)",
+      "Read(//tmp/**)",
+      "Bash(node --import tsx/esm services/api/src/index.ts)",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(curl -s -X POST http://localhost:3000/auth/verify -H \"Content-Type: application/json\" -d '{\"idToken\":\"uid-abc\"}')",
+      "Bash(curl -s -X POST http://localhost:3000/auth/verify -H \"Content-Type: application/json\" -d '{\"idToken\":\"gov001\"}')",
+      "Bash(curl -s http://localhost:3000/me/persona -H \"Authorization: Bearer uid-abc\")",
+      "Bash(curl -s \"http://localhost:3000/me/channel-replies\" -H \"Authorization: Bearer uid-abc\")",
+      "Bash(curl -s \"http://localhost:3000/me/peer-threads\" -H \"Authorization: Bearer uid-abc\")",
+      "Bash(curl -s \"http://localhost:3000/peer-threads/pt-001/messages\" -H \"Authorization: Bearer uid-abc\")",
+      "Bash(curl -s -X POST http://localhost:3000/gov/channel-replies/r-001/open -H 'Authorization: Bearer gov001' -H 'Content-Type: application/json')",
+      "Bash(curl *)",
+      "Bash(pkill -f \"node.*index.ts\")",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(powershell -Command \"Get-Process node | Stop-Process -Force\")"
     ]
   }
 }

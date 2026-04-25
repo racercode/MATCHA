@@ -1,33 +1,24 @@
 import { Router, type Router as IRouter } from 'express'
-import { getAuth } from 'firebase-admin/auth'
-import { getFirestore } from 'firebase-admin/firestore'
+import { govStaff } from '../lib/store.js'
 
 const router: IRouter = Router()
 
-router.post('/auth/verify', async (req, res) => {
+// POST /auth/verify
+// Accepts { idToken } where idToken is just the uid string (no Firebase)
+router.post('/auth/verify', (req, res) => {
   const { idToken } = req.body
-  if (!idToken) {
+  if (!idToken || typeof idToken !== 'string') {
     res.status(400).json({ success: false, error: '缺少 idToken', data: null })
     return
   }
 
-  try {
-    const decoded = await getAuth().verifyIdToken(idToken)
-    const uid = decoded.uid
+  const uid = idToken.trim()
+  const staff = govStaff.get(uid)
 
-    const db = getFirestore()
-    const govDoc = await db.doc(`gov_staff/${uid}`).get()
-
-    if (govDoc.exists) {
-      res.json({
-        success: true,
-        data: { uid, role: 'gov_staff', agencyId: govDoc.data()?.agencyId },
-      })
-    } else {
-      res.json({ success: true, data: { uid, role: 'citizen' } })
-    }
-  } catch {
-    res.status(401).json({ success: false, error: 'token 無效或已過期', data: null })
+  if (staff) {
+    res.json({ success: true, data: { uid, role: 'gov_staff', govId: staff.govId } })
+  } else {
+    res.json({ success: true, data: { uid, role: 'citizen' } })
   }
 })
 

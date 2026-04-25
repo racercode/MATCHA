@@ -151,7 +151,6 @@ export function createMockApp(): Express {
         humanTakeoverCount: 3,
         activeThreads: 5,
         matchedToday: 4,
-        tagDistribution: { 就業: 8, 青年: 6, 補助: 4, 住宅: 2 },
         needsDistribution: { 就業輔導: 7, 職業培訓: 5, 法律協助: 2 },
       },
     })

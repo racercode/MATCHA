@@ -581,3 +581,38 @@ GOV_AGENT_ID=agent_...
 | `read_channel_messages` | Coffee | `getDocs('channel_messages', orderBy createdAt desc, limit 50)` |
 | `propose_peer_match` | Coffee | `addDoc('peer_threads', { userAId, userBId, matchRationale })` |
 | `relay_message` | Coffee | `addDoc('peer_threads/{tid}/messages', ...)` + WS push to both users |
+
+---
+
+## 待完成項目（Group C）
+
+目前 API server 以 in-memory store 運作，尚未接 Firebase / 真實 Agents。以下為需補完的檔案：
+
+### 新建
+
+| 檔案 | 內容 |
+|------|------|
+| `lib/firestore.ts` | Firestore CRUD helpers（`getDoc`, `setDoc`, `addDoc`, `getDocs`），供 routes 和 tool wrappers 共用；建完後可刪除 `lib/store.ts` |
+
+### 修改
+
+| 檔案 | 待做事項 |
+|------|---------|
+| `middleware/auth.ts` | 改用 `getAuth().verifyIdToken(idToken)`；role 從 Firestore `/gov_staff/{uid}` 查 |
+| `routes/auth.ts` | 同上，`POST /auth/verify` 改驗 Firebase token |
+| `ws/handler.ts` | `handlePersonaMessage` 改呼叫 `invokePersonaAgent()`，移除 canned reply |
+| `agents/user/persona.ts` | 實作 `invokePersonaAgent()`：getOrCreateSession → Sessions API stream → 處理 custom_tool_use → WS push `agent_reply` |
+| `agents/user/tools.ts` | 所有 tool handler 改讀寫 Firestore（`get_my_persona`, `update_persona`, `publish_to_channel`）；`publish_to_channel` 完成後呼叫 `triggerGovAgent` + `triggerCoffeeMatch` |
+| `agents/user/coffee.ts` | 實作 `triggerCoffeeMatch()`：Sessions API → read_channel_messages → propose_peer_match → 寫 Firestore `peer_threads` |
+| `agent/gov/toolWrappers/readChannel.ts` | 改從 Firestore `channel_messages` 查詢，移除 fakeData 依賴 |
+| `agent/gov/toolWrappers/queryProgramDocs.ts` | 改從 Firestore `gov_resources/{rid}.pdfText` 讀取 |
+| `agent/gov/toolWrappers/proposeMatch.ts` | 改寫入 Firestore `channel_replies`，移除 mock 物件 |
+
+### 已完成，只需填 .env
+
+| 檔案 | 說明 |
+|------|------|
+| `lib/redis.ts` | 需填 `UPSTASH_REDIS_URL` |
+| `lib/session.ts` | getSession / setSession 已實作 |
+| `agents/user/setup.ts` | `initAgents()` 一次性建立 managed agents，跑完把 ID 填入 `.env` |
+| `agent/gov/managedAgent.ts` | `initGovManagedAgentSession()` 已實作 |
