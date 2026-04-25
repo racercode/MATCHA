@@ -1,11 +1,19 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, Image, StyleSheet, View } from 'react-native';
+import { Animated, Easing, Image, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { ThemedText } from './ThemedText';
 import { ThemedView } from './ThemedView';
 
 const disableImage = require('@/assets/Bear/disable.png');
 
-const Loading = ({ text = '', opacity = true }: { text?: string; opacity?: boolean }) => {
+const Loading = ({
+  text = '',
+  opacity = true,
+  contentStyle,
+}: {
+  text?: string;
+  opacity?: boolean;
+  contentStyle?: StyleProp<ViewStyle>;
+}) => {
   const imageBounce = useRef(new Animated.Value(0)).current;
   const dotBounces = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current;
 
@@ -43,18 +51,20 @@ const Loading = ({ text = '', opacity = true }: { text?: string; opacity?: boole
 
   return (
     <ThemedView style={[opacity ? { opacity: 1 } : { opacity: 0.5 }, styles.overlay]}>
-      <Animated.View style={[styles.imageWrap, { transform: [{ translateY: imageBounce }] }]}>
-        <Image source={disableImage} style={styles.image} resizeMode="contain" />
-      </Animated.View>
-      <View style={styles.dotsRow}>
-        {dotBounces.map((dot, index) => (
-          <Animated.View
-            key={index}
-            style={[styles.dot, { transform: [{ translateY: dot }] }]}
-          />
-        ))}
+      <View style={[styles.content, contentStyle]}>
+        <Animated.View style={[styles.imageWrap, { transform: [{ translateY: imageBounce }] }]}>
+          <Image source={disableImage} style={styles.image} resizeMode="contain" />
+        </Animated.View>
+        <View style={styles.dotsRow}>
+          {dotBounces.map((dot, index) => (
+            <Animated.View
+              key={index}
+              style={[styles.dot, { transform: [{ translateY: dot }] }]}
+            />
+          ))}
+        </View>
+        {text !== '' && <ThemedText type="default" style={styles.text}>{text}</ThemedText>}
       </View>
-      {text !== '' && <ThemedText type="default">{text}</ThemedText>}
     </ThemedView>
   );
 };
@@ -67,6 +77,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 999,
+  },
+  content: {
+    alignItems: 'center',
   },
   imageWrap: {
     marginBottom: 10,
@@ -86,5 +99,9 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 999,
     backgroundColor: '#A8A8A8',
+  },
+  text: {
+    color: '#8A8A8A',
+    fontWeight: '700',
   },
 });

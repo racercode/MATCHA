@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { ClientEvent, ServerEvent, SwipeCard, SwipeCardAnswer } from '@matcha/shared-types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Loading from '@/components/Loading';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { auth } from '@/lib/firebase';
@@ -147,6 +148,30 @@ export default function CardScreen() {
     submitBatchAnswers();
   }, [submitBatchAnswers]);
 
+  const maybeRecoverCardFlow = useCallback(() => {
+    if (cardsRef.current.length > 0) return;
+
+    if (requestPendingRef.current || awaitingBatchResponseRef.current) {
+      setIsLoadingCards(true);
+      return;
+    }
+
+    const expectedBatchSize = expectedBatchSizeRef.current;
+    const answeredCount = batchAnswersRef.current.length;
+
+    if (expectedBatchSize > 0) {
+      if (answeredCount >= expectedBatchSize) {
+        setIsLoadingCards(true);
+        submitBatchAnswers();
+      }
+      return;
+    }
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      requestNextCard();
+    }
+  }, [requestNextCard, submitBatchAnswers]);
+
   useEffect(() => {
     if (!uid) {
       restoreCompleteRef.current = true;
@@ -194,6 +219,9 @@ export default function CardScreen() {
     setCards((prev) => {
       const next = prev.slice(1);
       cardsRef.current = next;
+      if (next.length === 0) {
+        setIsLoadingCards(true);
+      }
       return next;
     });
     setSelectedChoice(null);
@@ -359,6 +387,11 @@ export default function CardScreen() {
     };
   }, [uid, maybeSubmitBatchAnswers, persistCardState, requestNextCard, submitBatchAnswers]);
 
+  useEffect(() => {
+    if (!uid) return;
+    maybeRecoverCardFlow();
+  }, [cards, uid, maybeRecoverCardFlow]);
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => Boolean(currentCardRef.current),
@@ -389,7 +422,12 @@ export default function CardScreen() {
   const goToPrompt = (index: number) => {
     setCards((prev) => {
       if (index <= 0 || index >= prev.length) return prev;
-      return prev.slice(index);
+      const next = prev.slice(index);
+      cardsRef.current = next;
+      if (next.length === 0) {
+        setIsLoadingCards(true);
+      }
+      return next;
     });
     setSelectedChoice(null);
     position.setValue({ x: 0, y: 0 });
@@ -411,8 +449,7 @@ export default function CardScreen() {
         <View style={styles.stage}>
           {isLoadingCards && cards.length === 0 ? (
             <View style={styles.loadingCard}>
-              <ActivityIndicator size="large" color="#6ACFF0" />
-              <ThemedText style={styles.loadingText}>AI 正在生成新的問題…</ThemedText>
+              <Loading text="AI 正在生成新的問題…" contentStyle={styles.loadingContent} />
             </View>
           ) : (
             <>
@@ -558,13 +595,10 @@ const styles = StyleSheet.create({
   },
   loadingCard: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
+    position: 'relative',
   },
-  loadingText: {
-    fontSize: 15,
-    color: '#8AA7C4',
+  loadingContent: {
+    transform: [{ translateY: 110 }],
   },
   questionCardHidden: {
     opacity: 0,

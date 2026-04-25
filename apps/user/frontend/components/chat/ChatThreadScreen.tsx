@@ -15,16 +15,20 @@ import {
 import type { ClientEvent, PeerMessage, ServerEvent, SwipeCard, Timestamp } from '@matcha/shared-types';
 import { msToTimestamp, toMs } from '@matcha/shared-types';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Loading from '@/components/Loading';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/containers/hooks/useAuth';
 import { auth } from '@/lib/firebase';
 import { API_BASE_URL, WS_URL } from '@/lib/api';
 import {
+  clearCachedStreamingPersonaReply,
   clearPendingPersonaMessages,
   enqueuePendingPersonaMessage,
   readCachedPersonaMessages,
+  readCachedStreamingPersonaReply,
   readPendingPersonaMessages,
+  writeCachedStreamingPersonaReply,
   writeCachedPersonaMessages,
 } from '@/lib/personaChatCache';
 import {
@@ -217,6 +221,7 @@ export default function ChatThreadScreen() {
   const [personaMessages, setPersonaMessages] = useState<PersonaMessage[]>([]);
   const [peerMessages, setPeerMessages] = useState<PeerThreadMessage[]>([]);
   const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [isAwaitingPersonaReply, setIsAwaitingPersonaReply] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [peerHistoryError, setPeerHistoryError] = useState<string | null>(null);
   const listRef = useRef<FlatList<PersonaMessage | PeerThreadMessage>>(null);
@@ -259,6 +264,8 @@ export default function ChatThreadScreen() {
       (async () => {
         try {
           const cached = await readCachedPersonaMessages(currentUserId);
+          const pending = await readPendingPersonaMessages(currentUserId);
+          const cachedStreamingReply = await readCachedStreamingPersonaReply(currentUserId);
           if (isMounted && cached.length > 0) {
             setPersonaMessages(
               cached.map((item) => ({
@@ -270,6 +277,11 @@ export default function ChatThreadScreen() {
                 createdAt: item.createdAt,
               })),
             );
+          }
+          if (isMounted) {
+            setIsAwaitingPersonaReply(pending.length > 0);
+            setStreamingText(pending.length > 0 ? cachedStreamingReply?.text ?? null : null);
+            streamBufferRef.current = pending.length > 0 ? cachedStreamingReply?.text ?? '' : '';
           }
 
           const headers = await buildAuthedHeaders();
@@ -300,6 +312,9 @@ export default function ChatThreadScreen() {
                 createdAt: item.createdAt,
               })),
             );
+            if (pending.length === 0) {
+              await clearCachedStreamingPersonaReply(currentUserId);
+            }
           } else if (cached.length === 0) {
             setPersonaMessages(buildSeedMessages(personaThreadId, currentUserId));
           }
@@ -379,8 +394,6 @@ export default function ChatThreadScreen() {
           ws.send(JSON.stringify(event));
         }
 
-        await clearPendingPersonaMessages(currentUserId);
-
         const cachedCardState = await readCachedPersonaCardState(currentUserId);
         const hasCachedCards =
           cachedCardState != null &&
@@ -402,8 +415,13 @@ export default function ChatThreadScreen() {
 
           if (mode === 'persona' && data.type === 'agent_reply') {
             if (!data.done) {
+              setIsAwaitingPersonaReply(false);
               streamBufferRef.current += data.content;
               setStreamingText(streamBufferRef.current);
+              void writeCachedStreamingPersonaReply(currentUserId, {
+                text: streamBufferRef.current,
+                createdAt: msToTimestamp(Date.now()),
+              });
               scrollToBottom();
             } else {
               if (cardPrefetchPendingRef.current && cardPrefetchCountRef.current > 0) {
@@ -423,6 +441,9 @@ export default function ChatThreadScreen() {
               const finalText = streamBufferRef.current + (data.content ?? '');
               streamBufferRef.current = '';
               setStreamingText(null);
+              setIsAwaitingPersonaReply(false);
+              void clearCachedStreamingPersonaReply(currentUserId);
+              void clearPendingPersonaMessages(currentUserId);
 
               if (finalText.trim()) {
                 setPersonaMessages((prev) => [
@@ -495,6 +516,16 @@ export default function ChatThreadScreen() {
     setDraft('');
 
     if (mode === 'persona') {
+      setIsAwaitingPersonaReply(true);
+      void enqueuePendingPersonaMessage(currentUserId, {
+        mid: `pending-${Date.now()}`,
+        text: content,
+        createdAt: msToTimestamp(Date.now()),
+      });
+      void clearCachedStreamingPersonaReply(currentUserId);
+      streamBufferRef.current = '';
+      setStreamingText(null);
+
       setPersonaMessages((prev) => [
         ...prev,
         {
@@ -510,12 +541,6 @@ export default function ChatThreadScreen() {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         const event: ClientEvent = { type: 'persona_message', content };
         wsRef.current.send(JSON.stringify(event));
-      } else {
-        void enqueuePendingPersonaMessage(currentUserId, {
-          mid: `pending-${Date.now()}`,
-          text: content,
-          createdAt: msToTimestamp(Date.now()),
-        });
       }
     } else {
       const localMessage: PeerThreadMessage = {
@@ -551,47 +576,54 @@ export default function ChatThreadScreen() {
               <ThemedText style={styles.threadTitle}>{peerName ?? '對話紀錄'}</ThemedText>
             </View>
           ) : null}
+          <View style={styles.messagesArea}>
+            <FlatList
+              ref={listRef}
+              data={visibleMessages}
+              keyExtractor={(item) => item.mid}
+              contentContainerStyle={styles.messagesContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+              onContentSizeChange={() => scrollToBottom(false)}
+              renderItem={({ item, index }) => {
+                const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
+                const showTimestamp =
+                  previousMessage == null ||
+                  toMs(item.createdAt) - toMs(previousMessage.createdAt) > 1000 * 60 * 8;
+                const isOwnMessage =
+                  mode === 'peer' ? item.from === `user:${currentUserId}` : item.from === `human:${currentUserId}`;
 
-          <FlatList
-            ref={listRef}
-            data={visibleMessages}
-            keyExtractor={(item) => item.mid}
-            contentContainerStyle={styles.messagesContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
-            onContentSizeChange={() => scrollToBottom(false)}
-            renderItem={({ item, index }) => {
-              const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
-              const showTimestamp =
-                previousMessage == null ||
-                toMs(item.createdAt) - toMs(previousMessage.createdAt) > 1000 * 60 * 8;
-              const isOwnMessage =
-                mode === 'peer' ? item.from === `user:${currentUserId}` : item.from === `human:${currentUserId}`;
+                return (
+                  <View style={styles.messageBlock}>
+                    {showTimestamp ? (
+                      <ThemedText style={styles.timestamp}>{formatTimeLabel(item.createdAt)}</ThemedText>
+                    ) : null}
+                    {mode === 'peer' ? (
+                      <PeerMessageBubble message={item as PeerThreadMessage} isOwnMessage={isOwnMessage} />
+                    ) : (
+                      <PersonaMessageBubble message={item as PersonaMessage} isOwnMessage={isOwnMessage} />
+                    )}
+                  </View>
+                );
+              }}
+              ListHeaderComponent={
+                isLoadingHistory ? (
+                  <ThemedText style={styles.statusText}>載入對話中…</ThemedText>
+                ) : peerHistoryError ? (
+                  <ThemedText style={styles.errorText}>{peerHistoryError}</ThemedText>
+                ) : null
+              }
+              ListFooterComponent={mode === 'persona' && streamingText !== null ? <TypingBubble text={streamingText} /> : null}
+            />
 
-              return (
-                <View style={styles.messageBlock}>
-                  {showTimestamp ? (
-                    <ThemedText style={styles.timestamp}>{formatTimeLabel(item.createdAt)}</ThemedText>
-                  ) : null}
-                  {mode === 'peer' ? (
-                    <PeerMessageBubble message={item as PeerThreadMessage} isOwnMessage={isOwnMessage} />
-                  ) : (
-                    <PersonaMessageBubble message={item as PersonaMessage} isOwnMessage={isOwnMessage} />
-                  )}
-                </View>
-              );
-            }}
-            ListHeaderComponent={
-              isLoadingHistory ? (
-                <ThemedText style={styles.statusText}>載入對話中…</ThemedText>
-              ) : peerHistoryError ? (
-                <ThemedText style={styles.errorText}>{peerHistoryError}</ThemedText>
-              ) : null
-            }
-            ListFooterComponent={mode === 'persona' && streamingText !== null ? <TypingBubble text={streamingText} /> : null}
-          />
+            {mode === 'persona' && isAwaitingPersonaReply && streamingText === null && !isLoadingHistory ? (
+              <View pointerEvents="none" style={styles.chatLoadingOverlay}>
+                <Loading text="AI 正在生成回覆…" contentStyle={styles.chatLoadingContent} />
+              </View>
+            ) : null}
+          </View>
 
           <View style={styles.composerBar}>
             <View style={styles.composerInner}>
@@ -639,7 +671,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1F2937',
   },
+  messagesArea: {
+    flex: 1,
+    position: 'relative',
+  },
   messagesContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24, gap: 8 },
+  chatLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  chatLoadingContent: {
+    transform: [{ translateY: 0 }],
+  },
   messageBlock: { gap: 10 },
   timestamp: {
     alignSelf: 'center',
