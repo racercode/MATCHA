@@ -205,6 +205,18 @@ interface PeerMessage {
 }
 ```
 
+#### `match_stats/{resourceId}`
+```typescript
+interface MatchStatRecord {
+  resourceId: string
+  agencyId: string
+  resourceName: string
+  totalAttempts: number        // 該 resource agent 評估次數（含成功與失敗）
+  totalMatches: number         // 媒合成功次數（eligible=true 且 score >= threshold）
+  updatedAt: Timestamp
+}
+```
+
 #### `gov_resources/{rid}`
 ```typescript
 interface GovernmentResource {
@@ -363,6 +375,9 @@ POST   /gov/resources/:rid/pdf            上傳 PDF（multipart/form-data）
                                            → 解析文字 → 存入 Firestore gov_resources/{rid}.pdfText
                                            → GovAgent 的 query_resource_pdf 即可讀取
 GET    /gov/dashboard                      媒合統計（媒合數、matchScore 分佈、開話率）
+GET    /gov/dashboard/agents              目前 resource agent 數量
+GET    /gov/dashboard/stats               全域媒合統計（總次數、成功次數、成功率）
+GET    /gov/dashboard/stats/:resourceId   單一 resource 媒合統計
 ```
 
 ---

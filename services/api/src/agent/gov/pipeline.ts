@@ -7,6 +7,7 @@ import {
 } from './toolWrappers/index.js'
 import type { GovToolRuntimeContext } from './toolWrappers/index.js'
 import { hasFirebaseAdminEnv } from '../../lib/firebaseEnv.js'
+import { recordMatchAttempt } from '../../lib/matchStatsRepo.js'
 import { channelReplies } from '../../lib/store.js'
 import type { MatchDecision, MatchAssessment, GovAgentPipelineResult } from './types.js'
 
@@ -255,9 +256,22 @@ export async function runGovAgentPipeline(
         threshold,
       )
 
+      const matched = Boolean(result && (result.assessment.decision?.score ?? 0) >= threshold)
+
+      if (hasFirebaseAdminEnv()) {
+        try {
+          await recordMatchAttempt(resource.rid, matched, {
+            agencyId: resource.agencyId,
+            resourceName: resource.name,
+          })
+        } catch (err) {
+          console.error(`  [match_stats] Failed to record: ${err instanceof Error ? err.message : err}`)
+        }
+      }
+
       if (!result) {
         console.log('  -> No match proposed')
-      } else if ((result.assessment.decision?.score ?? 0) < threshold) {
+      } else if (!matched) {
         console.log(`  -> Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
       } else {
         await persistChannelReply(result)

@@ -621,6 +621,93 @@ gov_agent_runs/{messageId}
 
 ---
 
+### ✅ `GET /gov/dashboard/agents`
+
+目前使用中的 Resource Agent 數量。
+
+**Response `200`**
+```json
+{
+  "success": true,
+  "data": {
+    "agentCount": 4,
+    "agents": [
+      { "rid": "rid-coworking-space-subsidy-115", "name": "青年創業共享空間租賃補助" },
+      { "rid": "rid-youth-startup-loan", "name": "臺北市青年創業融資貸款" }
+    ]
+  }
+}
+```
+
+---
+
+### ✅ `GET /gov/dashboard/stats`
+
+全部 Resource Agent 的媒合統計（包含每個 resource 的細項）。
+
+**Response `200`**
+```json
+{
+  "success": true,
+  "data": {
+    "totalAttempts": 120,
+    "totalMatches": 35,
+    "matchRate": 29.17,
+    "resources": [
+      {
+        "resourceId": "rid-coworking-space-subsidy-115",
+        "resourceName": "青年創業共享空間租賃補助",
+        "totalAttempts": 60,
+        "totalMatches": 20,
+        "matchRate": 33.33
+      }
+    ]
+  }
+}
+```
+
+| 欄位 | 說明 |
+|------|------|
+| `totalAttempts` | 所有 resource agent 評估次數（成功 + 失敗） |
+| `totalMatches` | 媒合成功次數（eligible=true 且 score >= threshold） |
+| `matchRate` | 成功率百分比（保留兩位小數） |
+
+---
+
+### ✅ `GET /gov/dashboard/stats/:resourceId`
+
+單一 Resource Agent 的媒合統計。
+
+**Response `200`**
+```json
+{
+  "success": true,
+  "data": {
+    "resourceId": "rid-coworking-space-subsidy-115",
+    "resourceName": "青年創業共享空間租賃補助",
+    "agencyId": "taipei-youth-dept",
+    "totalAttempts": 60,
+    "totalMatches": 20,
+    "matchRate": 33.33
+  }
+}
+```
+
+若 resourceId 尚無統計紀錄，回傳全零：
+```json
+{
+  "success": true,
+  "data": {
+    "resourceId": "rid-xxx",
+    "totalAttempts": 0,
+    "totalMatches": 0,
+    "matchRate": 0
+  }
+}
+```
+
+---
+
 ## 7. 政府 — Human Threads
 
 ---
@@ -951,6 +1038,9 @@ type ServerEvent =
 | ✅ | `GET /gov/channel-replies` | `services/api/src/routes/gov.ts` | 支援 `since`、`minScore`、`limit` |
 | ✅ | `POST /gov/channel-replies/:replyId/open` | `services/api/src/routes/gov.ts` | 建立或回傳既有 HumanThread |
 | ✅ | `GET /gov/dashboard` | `services/api/src/routes/gov.ts` | 支援 `since` |
+| ✅ | `GET /gov/dashboard/agents` | `services/api/src/routes/govDashboard.ts` | 目前 resource agent 數量 |
+| ✅ | `GET /gov/dashboard/stats` | `services/api/src/routes/govDashboard.ts` | 全域媒合統計 |
+| ✅ | `GET /gov/dashboard/stats/:resourceId` | `services/api/src/routes/govDashboard.ts` | 單一 resource 媒合統計 |
 | ✅ | `GET /gov/human-threads` | `services/api/src/routes/gov.ts` | gov staff 視角 |
 | ✅ | `GET /gov/resources` | `services/api/src/routes/gov.ts` | Firestore resources |
 | ✅ | `POST /gov/resources` | `services/api/src/routes/gov.ts` | 建立或更新 Firestore resource |
