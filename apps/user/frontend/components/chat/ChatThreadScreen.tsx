@@ -227,6 +227,7 @@ export default function ChatThreadScreen() {
   const listRef = useRef<FlatList<PersonaMessage | PeerThreadMessage>>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const streamBufferRef = useRef('');
+  const scrollFrameRef = useRef<number | null>(null);
   const cardPrefetchCountRef = useRef(0);
   const cardPrefetchPendingRef = useRef(false);
 
@@ -244,8 +245,12 @@ export default function ChatThreadScreen() {
   );
 
   const scrollToBottom = (animated = true) => {
-    requestAnimationFrame(() => {
+    if (scrollFrameRef.current != null) {
+      cancelAnimationFrame(scrollFrameRef.current);
+    }
+    scrollFrameRef.current = requestAnimationFrame(() => {
       listRef.current?.scrollToEnd({ animated });
+      scrollFrameRef.current = null;
     });
   };
 
@@ -422,7 +427,6 @@ export default function ChatThreadScreen() {
                 text: streamBufferRef.current,
                 createdAt: msToTimestamp(Date.now()),
               });
-              scrollToBottom();
             } else {
               if (cardPrefetchPendingRef.current && cardPrefetchCountRef.current > 0) {
                 void (async () => {
@@ -458,7 +462,6 @@ export default function ChatThreadScreen() {
                   },
                 ]);
               }
-              scrollToBottom();
             }
           }
 
@@ -504,10 +507,19 @@ export default function ChatThreadScreen() {
 
     return () => {
       isActive = false;
+      if (scrollFrameRef.current != null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
       wsRef.current?.close();
       wsRef.current = null;
     };
   }, [activeThreadId, currentUserId, mode, personaThreadId]);
+
+  useEffect(() => {
+    if (isLoadingHistory) return;
+    scrollToBottom(false);
+  }, [isLoadingHistory, visibleMessages.length]);
 
   const handleSend = () => {
     const content = draft.trim();
@@ -582,12 +594,11 @@ export default function ChatThreadScreen() {
               data={visibleMessages}
               keyExtractor={(item) => item.mid}
               contentContainerStyle={styles.messagesContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
-              onContentSizeChange={() => scrollToBottom(false)}
-              renderItem={({ item, index }) => {
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+            renderItem={({ item, index }) => {
                 const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
                 const showTimestamp =
                   previousMessage == null ||
