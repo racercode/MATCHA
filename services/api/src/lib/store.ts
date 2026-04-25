@@ -1,4 +1,6 @@
 // In-memory store — substitutes for Firestore in no-Firebase mode
+import { msToTimestamp, type Timestamp } from '@matcha/shared-types'
+export type { Timestamp }
 
 export interface UserPersona {
   uid: string
@@ -41,7 +43,7 @@ export interface HumanMessage {
   mid: string
   from: string // "user:{uid}" | "gov_staff:{staffId}"
   content: string
-  createdAt: number
+  createdAt: Timestamp
 }
 
 export interface PeerThread {
@@ -59,7 +61,7 @@ export interface PeerMessage {
   mid: string
   from: string // "user:{uid}" | "coffee_agent"
   content: string
-  createdAt: number
+  createdAt: Timestamp
 }
 
 export interface GovernmentResource {
@@ -196,6 +198,6 @@ peerMessages.set('pt-001', [
     mid: 'pm-001',
     from: 'coffee_agent',
     content: '你們兩位都對青年創業感興趣，我來介紹一下彼此！林小華目前在尋找共同創業夥伴。',
-    createdAt: NOW - 2_000_000,
+    createdAt: msToTimestamp(NOW - 2_000_000),
   },
 ])

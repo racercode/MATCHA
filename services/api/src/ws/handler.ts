@@ -1,4 +1,4 @@
-import type { IncomingMessage } from 'http'
+9import type { IncomingMessage } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
 import {
   peerThreads,
@@ -9,10 +9,28 @@ import {
   govStaff,
   findGovStaffUidByGovId,
 } from '../lib/store.js'
-import type { ThreadMessage } from '@matcha/shared-types'
-import { clients, userRoles, userGovIds, broadcast, type ServerEvent } from './push.js'
+import { msToTimestamp, toMs, type ServerEvent } from '@matcha/shared-types'
 
-export { broadcast }
+// ── Connection registry ───────────────────────────────────────────────────────
+
+// uid → set of open sockets (one user may have multiple tabs)
+const clients = new Map<string, Set<WebSocket>>()
+
+// uid → role
+const userRoles = new Map<string, 'citizen' | 'gov_staff'>()
+// uid → govId (for gov_staff only)
+const userGovIds = new Map<string, string>()
+
+// ── Broadcast helpers ─────────────────────────────────────────────────────────
+
+export function broadcast(uid: string, event: ServerEvent) {
+  const sockets = clients.get(uid)
+  if (!sockets) return
+  const payload = JSON.stringify(event)
+  for (const ws of sockets) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(payload)
+  }
+}
 
 function sendToSocket(ws: WebSocket, event: ServerEvent) {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event))
@@ -82,25 +100,18 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         mid: `pm-${now}-${Math.random().toString(36).slice(2, 6)}`,
         from: `user:${uid}`,
         content,
-        createdAt: now,
+        createdAt: msToTimestamp(Date.now()),
       }
 
       if (!peerMessages.has(threadId)) peerMessages.set(threadId, [])
-      peerMessages.get(threadId)!.push(storeMsg)
+      peerMessages.get(threadId)!.push(message)
 
-      thread.updatedAt = storeMsg.createdAt
+      // Update thread updatedAt (store uses number)
+      thread.updatedAt = toMs(message.createdAt)
 
-      const message: ThreadMessage = {
-        mid: storeMsg.mid,
-        tid: threadId,
-        from: `human:${uid}`,
-        type: 'answer',
-        content: { text: content },
-        createdAt: now,
-      }
-
-      broadcast(thread.userAId, { type: 'thread_message', message })
-      broadcast(thread.userBId, { type: 'thread_message', message })
+      // Push to both participants
+      broadcast(thread.userAId, { type: 'peer_message', message })
+      broadcast(thread.userBId, { type: 'peer_message', message })
       break
     }
 
@@ -135,13 +146,13 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         mid: `hm-${now}-${Math.random().toString(36).slice(2, 6)}`,
         from: storeFrom,
         content,
-        createdAt: now,
+        createdAt: msToTimestamp(Date.now()),
       }
 
       if (!humanMessages.has(threadId)) humanMessages.set(threadId, [])
       humanMessages.get(threadId)!.push(storeMsg)
 
-      thread.updatedAt = storeMsg.createdAt
+      thread.updatedAt = toMs(message.createdAt)
 
       const message: ThreadMessage = {
         mid: storeMsg.mid,

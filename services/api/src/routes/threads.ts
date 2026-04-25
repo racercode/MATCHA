@@ -1,4 +1,5 @@
 import { Router, type Router as IRouter } from 'express'
+import { toMs } from '@matcha/shared-types'
 import { verifyToken, type AuthedRequest } from '../middleware/auth.js'
 import { peerThreads, peerMessages, humanThreads, humanMessages } from '../lib/store.js'
 
@@ -23,8 +24,8 @@ router.get('/peer-threads/:tid/messages', (req, res) => {
   }
 
   const all = (peerMessages.get(tid) ?? [])
-    .filter(m => m.createdAt < before)
-    .sort((a, b) => a.createdAt - b.createdAt)
+    .filter(m => toMs(m.createdAt) < before)
+    .sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))
 
   const paged = all.slice(-limit)
   res.json({ success: true, data: { items: paged, hasMore: all.length > limit } })
@@ -54,8 +55,8 @@ router.get('/human-threads/:tid/messages', (req, res) => {
   }
 
   const all = (humanMessages.get(tid) ?? [])
-    .filter(m => m.createdAt < before)
-    .sort((a, b) => a.createdAt - b.createdAt)
+    .filter(m => toMs(m.createdAt) < before)
+    .sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))
 
   const paged = all.slice(-limit)
   res.json({ success: true, data: { items: paged, hasMore: all.length > limit } })

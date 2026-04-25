@@ -1,23 +1,23 @@
-import type { AgentThread, ThreadMessage } from '@matcha/shared-types'
-import type { MatchAssessment } from '../types.js'
+import { msToTimestamp } from '@matcha/shared-types'
+import type { MatchAssessment, PipelineThread, PipelineMessage } from '../types.js'
 
 export interface ProposeMatchInput {
   assessment: MatchAssessment
 }
 
 export interface ProposeMatchOutput {
-  thread: AgentThread
-  initialMessage: ThreadMessage
+  thread: PipelineThread
+  initialMessage: PipelineMessage
 }
 
 export function proposeMatchToolWrapper(input: ProposeMatchInput): ProposeMatchOutput {
   const { assessment } = input
-  const now = Date.now()
+  const now = msToTimestamp(Date.now())
   const decision = assessment.decision as MatchAssessment['decision'] & { reasoning?: string }
   const reason = decision.reason ?? decision.reasoning ?? ''
   const suggestedFirstMessage = decision.suggestedFirstMessage ?? ''
 
-  const thread: AgentThread = {
+  const thread: PipelineThread = {
     tid: `tid-gov-${assessment.resource.rid}-${assessment.channelMessage.uid}`,
     type: 'gov_user',
     initiatorId: `gov:${assessment.resource.rid}`,
@@ -31,7 +31,7 @@ export function proposeMatchToolWrapper(input: ProposeMatchInput): ProposeMatchO
     updatedAt: now,
   }
 
-  const initialMessage: ThreadMessage = {
+  const initialMessage: PipelineMessage = {
     mid: `msg-gov-${assessment.resource.rid}-${assessment.channelMessage.uid}`,
     tid: thread.tid,
     from: `gov_agent:${assessment.resource.rid}`,

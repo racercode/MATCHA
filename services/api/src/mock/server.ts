@@ -15,11 +15,9 @@ import { WebSocketServer, WebSocket } from 'ws'
 import {
   MOCK_PERSONA,
   MOCK_RESOURCE,
-  MOCK_THREAD,
   MOCK_PEER_PREVIEW,
+  msToTimestamp,
   type ServerEvent,
-  type AgentThread,
-  type ThreadMessage,
 } from '@matcha/shared-types'
 
 export function createMockApp(): Express {
@@ -27,16 +25,23 @@ export function createMockApp(): Express {
   app.use(cors())
   app.use(express.json())
 
-  const mockThreads: AgentThread[] = [{ ...MOCK_THREAD }]
+  // -------------------------------------------------------------------------
+  // Auth stub
+  // -------------------------------------------------------------------------
+
+  app.post('/auth/verify', (_req, res) => {
+    res.json({ success: true, data: { uid: MOCK_PERSONA.uid, role: 'citizen' } })
+  })
 
   // -------------------------------------------------------------------------
-  // REST — Citizen
+  // Citizen — Persona
   // -------------------------------------------------------------------------
 
   app.get('/me/persona', (_req, res) => {
     res.json({ success: true, data: MOCK_PERSONA })
   })
 
+  // Persona Chat via SSE (mirrors the WS persona_message / agent_reply contract)
   app.post('/me/chat', async (_req, res) => {
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
@@ -53,6 +58,7 @@ export function createMockApp(): Express {
     res.end()
   })
 
+  // Swipe card stub
   app.post('/me/swipe', (_req, res) => {
     res.json({
       success: true,
@@ -68,90 +74,159 @@ export function createMockApp(): Express {
   })
 
   // -------------------------------------------------------------------------
-  // REST — Threads
+  // Citizen — Match Inbox (channel replies polling)
   // -------------------------------------------------------------------------
 
-  app.get('/threads', (_req, res) => {
-    res.json({ success: true, data: { items: mockThreads, total: mockThreads.length, hasMore: false } })
-  })
-
-  app.get('/threads/:tid', (req, res) => {
-    const thread = mockThreads.find(t => t.tid === req.params.tid) ?? MOCK_THREAD
-    res.json({ success: true, data: thread })
-  })
-
-  app.get('/threads/:tid/messages', (req, res) => {
-    const msgs: ThreadMessage[] = [
-      {
-        mid: 'msg-001',
-        tid: req.params.tid,
-        from: `gov_agent:${MOCK_RESOURCE.rid}`,
-        type: 'query',
-        content: { text: '根據你的 persona，我認為你符合青年就業促進計畫的資格，請問你目前是否正在求職中？' },
-        createdAt: Date.now() - 30_000,
+  app.get('/me/channel-replies', (_req, res) => {
+    res.json({
+      success: true,
+      data: {
+        items: [
+          {
+            replyId: 'r-001',
+            messageId: 'm-001',
+            govId: MOCK_RESOURCE.rid,
+            govName: MOCK_RESOURCE.name,
+            content: '你的背景非常符合本計畫的資格：年齡符合、有就業需求。建議申請。',
+            matchScore: 87,
+            createdAt: msToTimestamp(Date.now() - 3_000_000),
+          },
+        ],
+        hasMore: false,
       },
-      {
-        mid: 'msg-002',
-        tid: req.params.tid,
-        from: `persona_agent:${MOCK_PERSONA.uid}`,
-        type: 'answer',
-        content: { text: '是的，我目前正在積極求職，特別是軟體開發相關職位。' },
-        createdAt: Date.now() - 20_000,
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Citizen — Peer Threads (Coffee Chat polling)
+  // -------------------------------------------------------------------------
+
+  const mockPeerThreadItems = [
+    {
+      tid: 'peer-tid-001',
+      type: 'user_user',
+      peer: {
+        uid: 'peer-uid-001',
+        displayName: '想轉品牌設計的ian',
+        summary: '文組背景，正在轉職 UI / 品牌設計，自學 Figma 兩個月，靠接小案子建立作品集',
       },
-    ]
-    res.json({ success: true, data: { items: msgs, total: msgs.length, hasMore: false } })
+      bullets: ['先找練習案子再考隨班課程，省時省錢', 'Behance 比 IG 更能被設計公司看到', '跨域補助和實習可以同期進行'],
+      matchRationale: '兩人都是文組背景轉設計，且都在尋找作品集建立方向',
+      status: 'active',
+      createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 20),
+      updatedAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 18),
+    },
+    {
+      tid: 'peer-tid-002',
+      type: 'user_user',
+      peer: {
+        uid: 'peer-uid-002',
+        displayName: '文組轉設計的karina',
+        summary: '廣告文案背景，目前在台北市設計培訓課，對品牌設計有興趣',
+      },
+      bullets: ['培訓課程名額比較到，先前先查', '文字能力是品牌設計的優勢，不用擔心'],
+      matchRationale: '兩人對品牌設計與職涯轉換都有興趣，背景互補',
+      status: 'active',
+      createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 72),
+      updatedAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 70),
+    },
+  ]
+
+  app.get('/me/peer-threads', (_req, res) => {
+    res.json({ success: true, data: { items: mockPeerThreadItems, hasMore: false } })
   })
 
-  app.post('/threads/:tid/message', (req, res) => {
-    const msg: ThreadMessage = {
-      mid: `msg-${Date.now()}`,
-      tid: req.params.tid,
-      from: `human:${MOCK_PERSONA.uid}`,
-      type: 'human_note',
-      content: { text: req.body?.content ?? '' },
-      createdAt: Date.now(),
-    }
-    res.json({ success: true, data: msg })
-  })
-
-  app.post('/threads/:tid/join', (req, res) => {
-    const thread = mockThreads.find(t => t.tid === req.params.tid)
-    if (thread) thread.userPresence = 'human'
-    res.json({ success: true, data: thread ?? MOCK_THREAD })
-  })
-
-  app.post('/threads/:tid/leave', (req, res) => {
-    const thread = mockThreads.find(t => t.tid === req.params.tid)
-    if (thread) thread.userPresence = 'agent'
-    res.json({ success: true, data: thread ?? MOCK_THREAD })
+  app.get('/peer-threads/:tid/messages', (req, res) => {
+    res.json({
+      success: true,
+      data: {
+        items: [
+          {
+            mid: `${req.params.tid}-msg-1`,
+            from: 'coffee_agent',
+            content: '你們兩個都是文組背景轉設計，應該有很多可以聊的！',
+            createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 19),
+          },
+          {
+            mid: `${req.params.tid}-msg-2`,
+            from: `user:${MOCK_PEER_PREVIEW.uid}`,
+            content: '對，我也覺得！你現在在學哪些設計工具呢？',
+            createdAt: msToTimestamp(Date.now() - 1000 * 60 * 60 * 18),
+          },
+        ],
+        hasMore: false,
+      },
+    })
   })
 
   // -------------------------------------------------------------------------
-  // REST — Gov
+  // Citizen — Human Threads polling
   // -------------------------------------------------------------------------
 
-  app.get('/gov/resources', (_req, res) => {
-    res.json({ success: true, data: { items: [MOCK_RESOURCE], total: 1, hasMore: false } })
+  app.get('/me/human-threads', (_req, res) => {
+    res.json({ success: true, data: { items: [], hasMore: false } })
   })
 
-  app.post('/gov/resources', (req, res) => {
-    const resource = { ...MOCK_RESOURCE, rid: `rid-${Date.now()}`, ...req.body, createdAt: Date.now() }
-    res.status(201).json({ success: true, data: resource })
+  app.get('/human-threads/:tid/messages', (_req, res) => {
+    res.json({ success: true, data: { items: [], hasMore: false } })
   })
 
-  app.get('/gov/threads', (_req, res) => {
-    res.json({ success: true, data: { items: mockThreads, total: mockThreads.length, hasMore: false } })
+  // -------------------------------------------------------------------------
+  // Gov — Channel Replies & Dashboard
+  // -------------------------------------------------------------------------
+
+  app.get('/gov/channel-replies', (_req, res) => {
+    res.json({
+      success: true,
+      data: {
+        items: [
+          {
+            replyId: 'r-001',
+            messageId: 'm-001',
+            govId: MOCK_RESOURCE.rid,
+            content: '你的背景非常符合本計畫的資格：年齡符合、有就業需求。建議申請。',
+            matchScore: 87,
+            createdAt: msToTimestamp(Date.now() - 3_000_000),
+            citizen: {
+              uid: MOCK_PERSONA.uid,
+              displayName: MOCK_PERSONA.displayName,
+              summary: MOCK_PERSONA.summary,
+            },
+            humanThreadOpened: false,
+          },
+        ],
+        hasMore: false,
+      },
+    })
+  })
+
+  app.post('/gov/channel-replies/:replyId/open', (req, res) => {
+    const now = msToTimestamp(Date.now())
+    res.status(201).json({
+      success: true,
+      data: {
+        tid: `ht-${Date.now()}`,
+        type: 'gov_user',
+        userId: MOCK_PERSONA.uid,
+        govId: MOCK_RESOURCE.rid,
+        channelReplyId: req.params.replyId,
+        matchScore: 87,
+        status: 'open',
+        createdAt: now,
+        updatedAt: now,
+      },
+    })
   })
 
   app.get('/gov/dashboard', (_req, res) => {
     res.json({
       success: true,
       data: {
-        totalMatches: 12,
-        humanTakeoverCount: 3,
-        activeThreads: 5,
-        matchedToday: 4,
-        needsDistribution: { 就業輔導: 7, 職業培訓: 5, 法律協助: 2 },
+        totalReplies: 12,
+        avgMatchScore: 78.5,
+        openedConversations: 3,
+        openRate: 0.25,
+        scoreDistribution: { '90-100': 2, '70-89': 7, '50-69': 2, '0-49': 1 },
       },
     })
   })
@@ -233,9 +308,73 @@ export function createMockApp(): Express {
     res.json({ success: true, data: { items: msgs, total: msgs.length, hasMore: false } })
   })
 
-  // Auth stub
-  app.post('/auth/verify', (_req, res) => {
-    res.json({ success: true, data: { uid: MOCK_PERSONA.uid, role: 'citizen' } })
+  app.post('/threads/:tid/message', (req, res) => {
+    const msg: ThreadMessage = {
+      mid: `msg-${Date.now()}`,
+      tid: req.params.tid,
+      from: `human:${MOCK_PERSONA.uid}`,
+      type: 'human_note',
+      content: { text: req.body?.content ?? '' },
+      createdAt: Date.now(),
+    }
+    res.json({ success: true, data: msg })
+  })
+
+  app.post('/threads/:tid/join', (req, res) => {
+    const thread = mockThreads.find(t => t.tid === req.params.tid)
+    if (thread) thread.userPresence = 'human'
+    res.json({ success: true, data: thread ?? MOCK_THREAD })
+  })
+
+  app.get('/human-threads/:tid/messages', (_req, res) => {
+    res.json({ success: true, data: { items: [], hasMore: false } })
+  })
+
+  // -------------------------------------------------------------------------
+  // Gov — Resources
+  // -------------------------------------------------------------------------
+
+  app.get('/gov/resources', (_req, res) => {
+    res.json({ success: true, data: { items: [MOCK_RESOURCE] } })
+  })
+
+  app.post('/gov/resources', (req, res) => {
+    const resource = { ...MOCK_RESOURCE, rid: `rid-${Date.now()}`, ...req.body, createdAt: msToTimestamp(Date.now()) }
+    res.status(201).json({ success: true, data: resource })
+  })
+
+  app.get('/gov/threads', (_req, res) => {
+    res.json({ success: true, data: { items: mockThreads, total: mockThreads.length, hasMore: false } })
+  })
+
+  app.get('/gov/dashboard', (_req, res) => {
+    res.json({
+      success: true,
+      data: {
+        totalReplies: 12,
+        avgMatchScore: 78.5,
+        openedConversations: 3,
+        openRate: 0.25,
+        scoreDistribution: { '90-100': 2, '70-89': 7, '50-69': 2, '0-49': 1 },
+      },
+    })
+  })
+
+  app.get('/gov/human-threads', (_req, res) => {
+    res.json({ success: true, data: { items: [], hasMore: false } })
+  })
+
+  // -------------------------------------------------------------------------
+  // Gov — Resources
+  // -------------------------------------------------------------------------
+
+  app.get('/gov/resources', (_req, res) => {
+    res.json({ success: true, data: { items: [MOCK_RESOURCE] } })
+  })
+
+  app.post('/gov/resources', (req, res) => {
+    const resource = { ...MOCK_RESOURCE, rid: `rid-${Date.now()}`, ...req.body, createdAt: msToTimestamp(Date.now()) }
+    res.status(201).json({ success: true, data: resource })
   })
 
   return app
@@ -249,31 +388,44 @@ export function startMockServer(port = 3001) {
   wss.on('connection', (socket: WebSocket) => {
     console.log('[mock] WS client connected')
 
-    setTimeout(() => {
-      const event: ServerEvent = { type: 'match_notify', thread: MOCK_THREAD, resource: MOCK_RESOURCE }
-      socket.send(JSON.stringify(event))
-    }, 5_000)
-
-    setTimeout(() => {
-      const peerThread: AgentThread = {
-        ...MOCK_THREAD,
-        tid: 'mock-tid-002',
-        type: 'user_user',
-        initiatorId: `user:${MOCK_PEER_PREVIEW.uid}`,
-        responderId: `user:${MOCK_PERSONA.uid}`,
-        govPresence: 'agent',
-        peerPresence: 'agent',
-      }
-      const event: ServerEvent = { type: 'peer_notify', thread: peerThread, peer: MOCK_PEER_PREVIEW }
-      socket.send(JSON.stringify(event))
-    }, 10_000)
-
     socket.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw.toString())
-        if (msg.type === 'chat_message') {
-          const reply: ServerEvent = { type: 'agent_reply', content: '我很想你...', done: true }
+
+        if (msg.type === 'persona_message') {
+          // Simulate streaming PersonaAgent reply
+          const reply: ServerEvent = { type: 'agent_reply', content: '我好想你...', done: false }
           socket.send(JSON.stringify(reply))
+          setTimeout(() => {
+            const done: ServerEvent = { type: 'agent_reply', content: '', done: true }
+            socket.send(JSON.stringify(done))
+          }, 800)
+        }
+
+        if (msg.type === 'peer_message') {
+          const echo: ServerEvent = {
+            type: 'peer_message',
+            message: {
+              mid: `pm-${Date.now()}`,
+              from: `user:mock`,
+              content: `（mock echo）${msg.content}`,
+              createdAt: msToTimestamp(Date.now()),
+            },
+          }
+          socket.send(JSON.stringify(echo))
+        }
+
+        if (msg.type === 'human_message') {
+          const echo: ServerEvent = {
+            type: 'human_message',
+            message: {
+              mid: `hm-${Date.now()}`,
+              from: 'gov_staff:mock',
+              content: `（mock）承辦人收到：${msg.content}`,
+              createdAt: msToTimestamp(Date.now()),
+            },
+          }
+          socket.send(JSON.stringify(echo))
         }
       } catch { /* ignore malformed */ }
     })
@@ -294,6 +446,5 @@ function sleep(ms: number) {
 }
 
 // Run standalone: tsx src/mock/server.ts
-// When imported from index.ts, startMockServer() is called explicitly.
 const isMain = process.argv[1]?.endsWith('server.ts') || process.argv[1]?.endsWith('server.js')
 if (isMain) startMockServer(3001)
