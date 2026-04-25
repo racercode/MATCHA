@@ -142,11 +142,11 @@ router.get('/me/human-threads', async (req, res) => {
   const since = Number(req.query.since) || 0
   const limit = Math.min(Number(req.query.limit) || 20, 100)
 
-  type ThreadDoc = { tid: string; type: string; govId: string; channelReplyId: string; matchScore: number; status: string; createdAt: number; updatedAt: number }
+  type ThreadDoc = { tid: string; type: string; govId: string; channelReplyId: string; matchScore: number; status: string; createdAt: number | any; updatedAt: number | any }
   const snap = await db.collection('human_threads').where('userId', '==', uid).get()
   const threads: ThreadDoc[] = snap.docs
     .map(d => ({ tid: d.id, ...(d.data() as Omit<ThreadDoc, 'tid'>) }))
-    .filter(t => t.updatedAt > since)
+    .filter(t => toMs(t.updatedAt) > since)
 
   const govIds = [...new Set(threads.map(t => t.govId as string))]
   const govNames = new Map<string, string>()
@@ -164,8 +164,8 @@ router.get('/me/human-threads', async (req, res) => {
       channelReplyId: t.channelReplyId,
       matchScore: t.matchScore,
       status: t.status,
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
+      createdAt: toMs(t.createdAt),
+      updatedAt: toMs(t.updatedAt),
     }))
     .sort((a, b) => b.updatedAt - a.updatedAt)
 

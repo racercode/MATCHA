@@ -410,7 +410,7 @@ router.get('/gov/dashboard', async (req, res) => {
     .filter(r => r.createdAt >= since)
 
   const openedConversations = threadsSnap.docs
-    .filter(d => (d.data().createdAt as number) >= since)
+    .filter(d => toMs(d.data().createdAt) >= since)
     .length
 
   const totalReplies = myReplies.length
@@ -443,11 +443,11 @@ router.get('/gov/human-threads', async (req, res) => {
   const since = Number(req.query.since) || 0
   const limit = Math.min(Number(req.query.limit) || 20, 100)
 
-  type GovThreadDoc = { tid: string; type: string; govId: string; userId: string; channelReplyId: string; matchScore: number; status: string; createdAt: number; updatedAt: number }
+  type GovThreadDoc = { tid: string; type: string; govId: string; userId: string; channelReplyId: string; matchScore: number; status: string; createdAt: number | any; updatedAt: number | any }
   const snap = await db.collection('human_threads').where('govId', '==', govId).get()
   const threads: GovThreadDoc[] = snap.docs
     .map(d => ({ tid: d.id, ...(d.data() as Omit<GovThreadDoc, 'tid'>) }))
-    .filter(t => t.updatedAt > since)
+    .filter(t => toMs(t.updatedAt) > since)
 
   const citizenUids = [...new Set(threads.map(t => t.userId))]
   const personaMap = new Map<string, { displayName: string; summary: string }>()
@@ -466,8 +466,8 @@ router.get('/gov/human-threads', async (req, res) => {
       channelReplyId: t.channelReplyId,
       matchScore: t.matchScore,
       status: t.status,
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
+      createdAt: toMs(t.createdAt),
+      updatedAt: toMs(t.updatedAt),
       citizen: {
         uid: t.userId,
         displayName: personaMap.get(t.userId)?.displayName ?? t.userId,
