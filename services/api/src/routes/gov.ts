@@ -1,6 +1,6 @@
 import { Router, type Router as IRouter } from 'express'
 import multer from 'multer'
-import type { ChannelMessage, ChannelReply as FirestoreChannelReply, GovernmentResource as AgentGovernmentResource } from '@matcha/shared-types'
+import { msToTimestamp, nowTimestamp, toMs, type ChannelMessage, type ChannelReply as FirestoreChannelReply, type GovernmentResource as AgentGovernmentResource } from '@matcha/shared-types'
 import { verifyToken, requireGovStaff, type AuthedRequest } from '../middleware/auth.js'
 import { fakeChannelMessages, fakeGovernmentResources } from '../agent/gov/fakeData.js'
 import { initGovManagedAgentSession } from '../agent/gov/managedAgent.js'
@@ -57,8 +57,8 @@ export function normalizeChannelMessage(input: RunGovAgentRequestBody['message']
   const publishedAt =
     input.publishedAt ??
     (typeof (input as Record<string, unknown>).publishedAtMs === 'number'
-      ? (input as Record<string, unknown>).publishedAtMs as number
-      : Date.now())
+      ? msToTimestamp((input as Record<string, unknown>).publishedAtMs as number)
+      : nowTimestamp())
 
   return {
     msgId: input.msgId,
@@ -161,7 +161,7 @@ function serializeGovChannelReply(reply: FirestoreChannelReply, citizenUid = '')
     govId: reply.govId,
     content: reply.content,
     matchScore: reply.matchScore,
-    createdAt: reply.createdAt,
+    createdAt: toMs(reply.createdAt),
     citizen: getCitizenInfo(citizenUid),
     humanThreadOpened: false,
   }

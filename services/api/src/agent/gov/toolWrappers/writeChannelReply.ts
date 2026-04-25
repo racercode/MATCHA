@@ -1,4 +1,4 @@
-import type { ChannelReply } from '@matcha/shared-types'
+import { msToTimestamp, type ChannelReply } from '@matcha/shared-types'
 import type { MatchAssessment } from '../types.js'
 
 export interface WriteChannelReplyInput {
@@ -10,7 +10,7 @@ export interface WriteChannelReplyOutput {
 }
 
 export function buildChannelReplyFromAssessment(assessment: MatchAssessment): ChannelReply {
-  const now = Date.now()
+  const now = msToTimestamp(Date.now())
   const decision = assessment.decision as MatchAssessment['decision'] & { reasoning?: string }
   const reason = decision.reason ?? decision.reasoning ?? ''
 

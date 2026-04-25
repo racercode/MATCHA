@@ -1,4 +1,4 @@
-import type { ChannelMessage } from '@matcha/shared-types'
+import { toMs, type ChannelMessage } from '@matcha/shared-types'
 import { fakeChannelMessages } from '../fakeData.js'
 
 export interface ReadChannelInput {
@@ -14,7 +14,7 @@ export function readChannelToolWrapper(input?: ReadChannelInput): ReadChannelOut
   let messages = fakeChannelMessages
 
   if (input?.since) {
-    messages = messages.filter(message => message.publishedAt > input.since!)
+    messages = messages.filter(message => toMs(message.publishedAt) > input.since!)
   }
 
   if (input?.limit) {

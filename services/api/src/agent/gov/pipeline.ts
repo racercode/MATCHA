@@ -1,4 +1,4 @@
-import type { ChannelMessage, GovernmentResource } from '@matcha/shared-types'
+import { toMs, type ChannelMessage, type GovernmentResource } from '@matcha/shared-types'
 import { client } from './managedAgent.js'
 import {
   buildChannelReplyFromAssessment,
@@ -102,7 +102,7 @@ async function persistChannelReply(result: GovAgentPipelineResult): Promise<void
   } else {
     channelReplies.set(result.reply.replyId, {
       ...result.reply,
-      createdAt: result.reply.createdAt,
+      createdAt: toMs(result.reply.createdAt),
     })
   }
 }

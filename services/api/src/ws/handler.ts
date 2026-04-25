@@ -11,16 +11,7 @@ import {
   type PeerMessage,
   type HumanMessage,
 } from '../lib/store.js'
-import type { SwipeCard } from '@matcha/shared-types'
-
-// ── Types from api-doc §9 ─────────────────────────────────────────────────────
-
-type ServerEvent =
-  | { type: 'agent_reply'; content: string; done: boolean }
-  | { type: 'swipe_card'; card: SwipeCard }
-  | { type: 'peer_message'; message: PeerMessage }
-  | { type: 'human_message'; message: HumanMessage }
-  | { type: 'error'; code: string; message: string }
+import { msToTimestamp, toMs, type ServerEvent } from '@matcha/shared-types'
 
 // ── Connection registry ───────────────────────────────────────────────────────
 
@@ -110,14 +101,14 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         mid: `pm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         from: `user:${uid}`,
         content,
-        createdAt: Date.now(),
+        createdAt: msToTimestamp(Date.now()),
       }
 
       if (!peerMessages.has(threadId)) peerMessages.set(threadId, [])
       peerMessages.get(threadId)!.push(message)
 
-      // Update thread updatedAt
-      thread.updatedAt = message.createdAt
+      // Update thread updatedAt (store uses number)
+      thread.updatedAt = toMs(message.createdAt)
 
       // Push to both participants
       broadcast(thread.userAId, { type: 'peer_message', message })
@@ -155,13 +146,13 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         mid: `hm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         from,
         content,
-        createdAt: Date.now(),
+        createdAt: msToTimestamp(Date.now()),
       }
 
       if (!humanMessages.has(threadId)) humanMessages.set(threadId, [])
       humanMessages.get(threadId)!.push(message)
 
-      thread.updatedAt = message.createdAt
+      thread.updatedAt = toMs(message.createdAt)
 
       // Push to citizen
       broadcast(thread.userId, { type: 'human_message', message })

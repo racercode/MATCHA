@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import * as dotenv from 'dotenv'
 import { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore'
-import type { ChannelReply } from '@matcha/shared-types'
+import { msToTimestamp, toMs, type ChannelReply } from '@matcha/shared-types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env') })
@@ -77,7 +77,7 @@ describe('channelRepliesRepo', () => {
         govId,
         content: '測試用媒合回覆',
         matchScore: 88,
-        createdAt: nowMs,
+        createdAt: msToTimestamp(nowMs),
       }
 
       await db.collection('channel_messages').doc(messageId).set({
@@ -108,7 +108,7 @@ describe('channelRepliesRepo', () => {
       assert.equal(govReply.govId, govId)
       assert.equal(govReply.content, reply.content)
       assert.equal(govReply.matchScore, reply.matchScore)
-      assert.equal(govReply.createdAt, nowMs)
+      assert.equal(toMs(govReply.createdAt), nowMs)
       assert.deepEqual(userReply, govReply)
     },
   )

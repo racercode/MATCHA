@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { msToTimestamp } from '@matcha/shared-types'
 import {
   buildGovAgentRunPlan,
   DEFAULT_AGENCY_ID,
@@ -17,14 +18,14 @@ describe('normalizeChannelMessage', () => {
       msgId: 'msg-test-001',
       uid: 'user-test-001',
       summary: '想找設計實習。',
-      publishedAt: 1710000000000,
+      publishedAtMs: 1710000000000,
     })
 
     assert.deepEqual(message, {
       msgId: 'msg-test-001',
       uid: 'user-test-001',
       summary: '想找設計實習。',
-      publishedAt: 1710000000000,
+      publishedAt: msToTimestamp(1710000000000),
     })
   })
 
@@ -61,7 +62,7 @@ describe('buildGovAgentRunPlan', () => {
         msgId: 'msg-channel-001',
         uid: 'user-xiaoya-001',
         summary: '中文系大三，想找設計實習。',
-        publishedAt: 1710000000000,
+        publishedAtMs: 1710000000000,
       },
     })
 
@@ -85,7 +86,7 @@ describe('buildGovAgentRunPlan', () => {
         msgId: 'msg-compat-001',
         uid: 'user-xiaoya-001',
         summary: '舊欄位名稱仍可暫時使用。',
-        publishedAt: 1710000000000,
+        publishedAtMs: 1710000000000,
       },
     })
 
@@ -172,7 +173,7 @@ describe('serializeGovAgentResult', () => {
         govId: 'rid-design-intern-002',
         content: '需求與資源高度匹配',
         matchScore: 90,
-        createdAt: 1710000000000,
+        createdAt: msToTimestamp(1710000000000),
       },
     }
 

@@ -1,5 +1,5 @@
 import { Router, type Router as IRouter } from 'express'
-import type { ChannelReply as FirestoreChannelReply } from '@matcha/shared-types'
+import { toMs, type ChannelReply as FirestoreChannelReply } from '@matcha/shared-types'
 import { verifyToken, type AuthedRequest } from '../middleware/auth.js'
 import { hasFirebaseAdminEnv } from '../lib/firebaseEnv.js'
 import {
@@ -23,7 +23,7 @@ function serializeChannelReply(reply: FirestoreChannelReply) {
     govName: getGovName(reply.govId),
     content: reply.content,
     matchScore: reply.matchScore,
-    createdAt: reply.createdAt,
+    createdAt: toMs(reply.createdAt),
   }
 }
 

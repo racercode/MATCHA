@@ -1,3 +1,15 @@
+export interface Timestamp {
+    seconds: number;
+    nanoseconds: number;
+    toMillis?(): number;
+    toDate?(): Date;
+}
+/** Convert any Timestamp to unix milliseconds */
+export declare const toMs: (ts: Timestamp) => number;
+/** Create a Timestamp from unix milliseconds */
+export declare const msToTimestamp: (ms: number) => Timestamp;
+/** Timestamp for right now */
+export declare const nowTimestamp: () => Timestamp;
 export type UserRole = 'citizen' | 'gov_staff';
 export interface AuthUser {
     uid: string;
@@ -14,7 +26,7 @@ export interface UserPersona {
     summary: string;
     needs: string[];
     offers: string[];
-    updatedAt: number;
+    updatedAt: Timestamp;
 }
 export interface PeerPreview {
     uid: string;
@@ -26,15 +38,7 @@ export interface ChannelMessage {
     msgId: string;
     uid: string;
     summary: string;
-    publishedAt: number;
-}
-export interface ChannelReply {
-    replyId: string;
-    messageId: string;
-    govId: string;
-    content: string;
-    matchScore: number;
-    createdAt: number;
+    publishedAt: Timestamp;
 }
 export interface GovernmentResource {
     rid: string;
@@ -44,35 +48,49 @@ export interface GovernmentResource {
     description: string;
     eligibilityCriteria: string[];
     contactUrl?: string;
-    createdAt: number;
+    pdfStoragePath?: string;
+    createdAt: Timestamp;
 }
-export type ThreadType = 'gov_user' | 'user_user';
-export type ThreadStatus = 'negotiating' | 'matched' | 'rejected' | 'human_takeover';
-export type PresenceState = 'agent' | 'human' | 'both';
-export interface AgentThread {
+export interface ChannelReply {
+    replyId: string;
+    messageId: string;
+    govId: string;
+    content: string;
+    matchScore: number;
+    createdAt: Timestamp;
+}
+export interface HumanThread {
     tid: string;
-    type: ThreadType;
-    initiatorId: string;
-    responderId: string;
-    status: ThreadStatus;
-    matchScore?: number;
-    summary?: string;
-    userPresence: PresenceState;
-    govPresence: PresenceState;
-    peerPresence?: PresenceState;
-    govStaffUid?: string;
-    createdAt: number;
-    updatedAt: number;
+    type: 'gov_user';
+    userId: string;
+    govId: string;
+    channelReplyId: string;
+    matchScore: number;
+    status: 'open' | 'closed';
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
 }
-export type MessageSenderType = `persona_agent:${string}` | `coffee_agent:${string}` | `gov_agent:${string}` | `human:${string}`;
-export type MessageType = 'query' | 'answer' | 'decision' | 'human_note';
-export interface ThreadMessage {
+export interface HumanMessage {
     mid: string;
-    tid: string;
     from: string;
-    type: MessageType;
-    content: Record<string, unknown>;
-    createdAt: number;
+    content: string;
+    createdAt: Timestamp;
+}
+export interface PeerThread {
+    tid: string;
+    type: 'user_user';
+    userAId: string;
+    userBId: string;
+    matchRationale: string;
+    status: 'active' | 'closed';
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+}
+export interface PeerMessage {
+    mid: string;
+    from: string;
+    content: string;
+    createdAt: Timestamp;
 }
 export interface SwipeCard {
     cardId: string;
@@ -84,27 +102,14 @@ export interface SwipeCard {
 }
 export type SwipeDirection = 'left' | 'right';
 export type ClientEvent = {
-    type: 'chat_message';
+    type: 'persona_message';
     content: string;
 } | {
-    type: 'swipe';
-    direction: SwipeDirection;
-    cardId: string;
-    value: string;
-} | {
-    type: 'subscribe_thread';
+    type: 'peer_message';
     threadId: string;
+    content: string;
 } | {
-    type: 'unsubscribe_thread';
-    threadId: string;
-} | {
-    type: 'human_join';
-    threadId: string;
-} | {
-    type: 'human_leave';
-    threadId: string;
-} | {
-    type: 'thread_message';
+    type: 'human_message';
     threadId: string;
     content: string;
 };
@@ -113,30 +118,11 @@ export type ServerEvent = {
     content: string;
     done: boolean;
 } | {
-    type: 'swipe_card';
-    card: SwipeCard;
+    type: 'peer_message';
+    message: PeerMessage;
 } | {
-    type: 'match_notify';
-    thread: AgentThread;
-    resource: GovernmentResource;
-} | {
-    type: 'peer_notify';
-    thread: AgentThread;
-    peer: PeerPreview;
-} | {
-    type: 'thread_update';
-    thread: AgentThread;
-} | {
-    type: 'thread_message';
-    message: ThreadMessage;
-} | {
-    type: 'presence_update';
-    threadId: string;
-    side: 'user' | 'gov' | 'peer';
-    state: PresenceState;
-} | {
-    type: 'persona_updated';
-    persona: UserPersona;
+    type: 'human_message';
+    message: HumanMessage;
 } | {
     type: 'error';
     code: string;
@@ -153,14 +139,18 @@ export interface PaginatedResponse<T> {
     hasMore: boolean;
 }
 export interface GovStats {
-    totalMatches: number;
-    humanTakeoverCount: number;
-    activeThreads: number;
-    matchedToday: number;
-    needsDistribution: Record<string, number>;
+    totalReplies: number;
+    avgMatchScore: number;
+    openedConversations: number;
+    openRate: number;
+    scoreDistribution: {
+        '90-100': number;
+        '70-89': number;
+        '50-69': number;
+        '0-49': number;
+    };
 }
 export declare const MOCK_PERSONA: UserPersona;
 export declare const MOCK_RESOURCE: GovernmentResource;
-export declare const MOCK_THREAD: AgentThread;
 export declare const MOCK_PEER_PREVIEW: PeerPreview;
 //# sourceMappingURL=index.d.ts.map

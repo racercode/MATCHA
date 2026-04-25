@@ -1,5 +1,6 @@
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { toMs } from '@matcha/shared-types'
 import { parseMatchDecision } from './pipeline.js'
 import { readChannelToolWrapper } from './toolWrappers/readChannel.js'
 import { queryResourcePdfToolWrapper } from './toolWrappers/queryResourcePdf.js'
@@ -99,7 +100,7 @@ describe('readChannelToolWrapper', () => {
     const cutoff = Date.now() - 20_000
     const { messages } = readChannelToolWrapper({ since: cutoff })
     for (const message of messages) {
-      assert.ok(message.publishedAt > cutoff)
+      assert.ok(toMs(message.publishedAt) > cutoff)
     }
   })
 
@@ -180,7 +181,7 @@ describe('writeChannelReplyToolWrapper', () => {
     assert.equal(reply.govId, fakeGovernmentResources[1].rid)
     assert.equal(reply.content, mockDecision.reason)
     assert.equal(reply.matchScore, 90)
-    assert.ok(reply.createdAt > 0)
+    assert.ok(toMs(reply.createdAt) > 0)
   })
 
   it('generates deterministic reply id', async () => {

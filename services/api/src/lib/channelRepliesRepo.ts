@@ -1,5 +1,5 @@
 import { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore'
-import type { ChannelReply } from '@matcha/shared-types'
+import { toMs, type ChannelReply } from '@matcha/shared-types'
 import { db } from './firebase.js'
 import { fromFirestoreTimestamp, toFirestoreTimestamp } from './firestoreTimestamp.js'
 
@@ -116,6 +116,6 @@ export async function listChannelRepliesForUser(
 
   return replySnapshots
     .flatMap(snapshot => snapshot.docs.map(doc => toChannelReply(doc.data())))
-    .sort((a, b) => b.createdAt - a.createdAt)
+    .sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt))
     .slice(0, limit)
 }

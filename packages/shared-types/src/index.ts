@@ -5,13 +5,35 @@
 // =============================================================================
 
 // ---------------------------------------------------------------------------
+// Timestamp  (compatible with Firebase Timestamp and plain JSON objects)
+// ---------------------------------------------------------------------------
+
+export interface Timestamp {
+  seconds: number
+  nanoseconds: number
+  toMillis?(): number
+  toDate?(): Date
+}
+
+/** Convert any Timestamp to unix milliseconds */
+export const toMs = (ts: Timestamp): number =>
+  ts.toMillis?.() ?? ts.seconds * 1000 + Math.floor(ts.nanoseconds / 1_000_000)
+
+/** Create a Timestamp from unix milliseconds */
+export const msToTimestamp = (ms: number): Timestamp => ({
+  seconds: Math.floor(ms / 1000),
+  nanoseconds: (ms % 1000) * 1_000_000,
+})
+
+/** Timestamp for right now */
+export const nowTimestamp = (): Timestamp => msToTimestamp(Date.now())
+
+// ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
 export type UserRole = 'citizen' | 'gov_staff'
 
-// Anonymous auth: email and displayName are absent until user sets them.
-// Role is resolved server-side by checking Firestore /gov_staff/{uid}.
 export interface AuthUser {
   uid: string
   email?: string
@@ -22,7 +44,7 @@ export interface AuthUser {
 }
 
 // ---------------------------------------------------------------------------
-// User Persona
+// User Persona  (Firestore: personas/{uid})
 // ---------------------------------------------------------------------------
 
 export interface UserPersona {
@@ -30,9 +52,9 @@ export interface UserPersona {
   displayName: string
   photoURL?: string
   summary: string    // agent-maintained natural language summary
-  needs: string[]    // what the user is seeking
+  needs: string[]
   offers: string[]   // what the user can share (coffee chat)
-  updatedAt: number  // unix ms
+  updatedAt: Timestamp
 }
 
 // Lightweight peer card shown in coffee chat matching
@@ -44,27 +66,18 @@ export interface PeerPreview {
 }
 
 // ---------------------------------------------------------------------------
-// Central Channel
+// Central Channel  (Firestore: channel_messages/{msgId})
 // ---------------------------------------------------------------------------
 
 export interface ChannelMessage {
   msgId: string
-  uid: string
+  uid: string        // broadcaster citizen uid
   summary: string
-  publishedAt: number // unix ms
-}
-
-export interface ChannelReply {
-  replyId: string
-  messageId: string   // points to channel_messages/{msgId}
-  govId: string       // government resource id
-  content: string     // GovAgent rationale shown in Match Inbox / Dashboard
-  matchScore: number  // 0-100
-  createdAt: number   // unix ms
+  publishedAt: Timestamp
 }
 
 // ---------------------------------------------------------------------------
-// Government Resources
+// Government Resources  (Firestore: gov_resources/{rid})
 // ---------------------------------------------------------------------------
 
 export interface GovernmentResource {
@@ -75,76 +88,83 @@ export interface GovernmentResource {
   description: string
   eligibilityCriteria: string[]
   contactUrl?: string
-  createdAt: number
+  pdfStoragePath?: string  // filled after PDF upload
+  createdAt: Timestamp
 }
 
 // ---------------------------------------------------------------------------
-// Agent Threads
+// Channel Replies  (Firestore: channel_replies/{replyId})
+// GovAgent writes these after assessing a ChannelMessage.
+// Citizens discover via GET /me/channel-replies (polling).
 // ---------------------------------------------------------------------------
 
-export type ThreadType = 'gov_user' | 'user_user'
+export interface ChannelReply {
+  replyId: string
+  messageId: string  // → channel_messages/{msgId}
+  govId: string
+  content: string    // GovAgent match rationale
+  matchScore: number // 0–100
+  createdAt: Timestamp
+}
 
-export type ThreadStatus =
-  | 'negotiating'
-  | 'matched'
-  | 'rejected'
-  | 'human_takeover'
+// ---------------------------------------------------------------------------
+// Human Threads  (Firestore: human_threads/{tid})
+// Created when gov staff opens a conversation from a channel reply.
+// ---------------------------------------------------------------------------
 
-// 'agent'  — only the agent is active on this side
-// 'human'  — human has joined, agent goes passive
-// 'both'   — human joined but agent may still assist when needed
-export type PresenceState = 'agent' | 'human' | 'both'
-
-export interface AgentThread {
+export interface HumanThread {
   tid: string
-  type: ThreadType
-  initiatorId: string  // "gov:{rid}" | "user:{uid}"
-  responderId: string  // "user:{uid}"
-  status: ThreadStatus
-  matchScore?: number  // 0–100, agent's subjective score for display only
-  summary?: string     // agent-generated before human takeover
-
-  // gov_user threads
-  userPresence: PresenceState
-  govPresence: PresenceState
-
-  // user_user (coffee chat) threads — reuses userPresence for initiator
-  // peerPresence tracks the responder's side
-  peerPresence?: PresenceState
-
-  // set when a gov_staff human joins; needed to push WS events to them
-  govStaffUid?: string
-
-  createdAt: number
-  updatedAt: number
+  type: 'gov_user'
+  userId: string
+  govId: string
+  channelReplyId: string
+  matchScore: number
+  status: 'open' | 'closed'
+  createdAt: Timestamp
+  updatedAt: Timestamp
 }
 
-export type MessageSenderType =
-  | `persona_agent:${string}`   // uid
-  | `coffee_agent:${string}`    // uid
-  | `gov_agent:${string}`       // rid
-  | `human:${string}`           // uid
-
-export type MessageType = 'query' | 'answer' | 'decision' | 'human_note'
-
-export interface ThreadMessage {
+// human_threads/{tid}/messages/{mid}
+export interface HumanMessage {
   mid: string
-  tid: string
-  from: string       // MessageSenderType pattern
-  type: MessageType
-  content: Record<string, unknown>
-  createdAt: number
+  from: string    // "user:{uid}" | "gov_staff:{staffId}"
+  content: string
+  createdAt: Timestamp
 }
 
 // ---------------------------------------------------------------------------
-// Swipe UI
+// Peer Threads  (Firestore: peer_threads/{tid})
+// CoffeeAgent creates these after matching two citizens.
+// ---------------------------------------------------------------------------
+
+export interface PeerThread {
+  tid: string
+  type: 'user_user'
+  userAId: string
+  userBId: string
+  matchRationale: string
+  status: 'active' | 'closed'
+  createdAt: Timestamp
+  updatedAt: Timestamp
+}
+
+// peer_threads/{tid}/messages/{mid}
+export interface PeerMessage {
+  mid: string
+  from: string    // "user:{uid}" | "coffee_agent"
+  content: string
+  createdAt: Timestamp
+}
+
+// ---------------------------------------------------------------------------
+// Swipe UI  (client-only state; no server WS event needed)
 // ---------------------------------------------------------------------------
 
 export interface SwipeCard {
   cardId: string
   question: string
-  leftLabel: string  // e.g. "不感興趣"
-  rightLabel: string // e.g. "有興趣"
+  leftLabel: string
+  rightLabel: string
   leftValue: string
   rightValue: string
 }
@@ -152,29 +172,26 @@ export interface SwipeCard {
 export type SwipeDirection = 'left' | 'right'
 
 // ---------------------------------------------------------------------------
-// WebSocket Events
+// WebSocket Events  (see api-doc §9)
 // ---------------------------------------------------------------------------
 
 // Client → Server
 export type ClientEvent =
-  | { type: 'chat_message'; content: string }
-  | { type: 'swipe'; direction: SwipeDirection; cardId: string; value: string }
-  | { type: 'subscribe_thread'; threadId: string }
-  | { type: 'unsubscribe_thread'; threadId: string }
-  | { type: 'human_join'; threadId: string }
-  | { type: 'human_leave'; threadId: string }
-  | { type: 'thread_message'; threadId: string; content: string }
+  // Persona Chat — swipe handled by sending special content string
+  | { type: 'persona_message'; content: string }
+  // Coffee Chat — CoffeeAgent relays and pushes to both participants
+  | { type: 'peer_message'; threadId: string; content: string }
+  // Human Thread — citizen or gov_staff sends a message
+  | { type: 'human_message'; threadId: string; content: string }
 
 // Server → Client
 export type ServerEvent =
+  // PersonaAgent streaming reply (one event per token, done=true signals end)
   | { type: 'agent_reply'; content: string; done: boolean }
-  | { type: 'swipe_card'; card: SwipeCard }
-  | { type: 'match_notify'; thread: AgentThread; resource: GovernmentResource }
-  | { type: 'peer_notify'; thread: AgentThread; peer: PeerPreview }
-  | { type: 'thread_update'; thread: AgentThread }
-  | { type: 'thread_message'; message: ThreadMessage }
-  | { type: 'presence_update'; threadId: string; side: 'user' | 'gov' | 'peer'; state: PresenceState }
-  | { type: 'persona_updated'; persona: UserPersona }
+  // CoffeeAgent relay pushed to both thread participants
+  | { type: 'peer_message'; message: PeerMessage }
+  // Human thread message pushed to the other party
+  | { type: 'human_message'; message: HumanMessage }
   | { type: 'error'; code: string; message: string }
 
 // ---------------------------------------------------------------------------
@@ -194,15 +211,20 @@ export interface PaginatedResponse<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Gov Dashboard
+// Gov Dashboard  (GET /gov/dashboard — see api-doc §6)
 // ---------------------------------------------------------------------------
 
 export interface GovStats {
-  totalMatches: number
-  humanTakeoverCount: number
-  activeThreads: number
-  matchedToday: number
-  needsDistribution: Record<string, number>  // need category → count
+  totalReplies: number
+  avgMatchScore: number
+  openedConversations: number
+  openRate: number
+  scoreDistribution: {
+    '90-100': number
+    '70-89': number
+    '50-69': number
+    '0-49': number
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +237,7 @@ export const MOCK_PERSONA: UserPersona = {
   summary: '正在尋找就業輔導和職業培訓資源的年輕人',
   needs: ['就業輔導', '職業培訓'],
   offers: ['軟體開發經驗', '社區志工'],
-  updatedAt: Date.now(),
+  updatedAt: nowTimestamp(),
 }
 
 export const MOCK_RESOURCE: GovernmentResource = {
@@ -226,20 +248,7 @@ export const MOCK_RESOURCE: GovernmentResource = {
   description: '提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢',
   eligibilityCriteria: ['年齡 18–29 歲', '具中華民國國籍', '非在學中'],
   contactUrl: 'https://www.mol.gov.tw',
-  createdAt: Date.now(),
-}
-
-export const MOCK_THREAD: AgentThread = {
-  tid: 'mock-tid-001',
-  type: 'gov_user',
-  initiatorId: 'gov:mock-rid-001',
-  responderId: 'user:mock-uid-001',
-  status: 'negotiating',
-  matchScore: 82,
-  userPresence: 'agent',
-  govPresence: 'agent',
-  createdAt: Date.now() - 60_000,
-  updatedAt: Date.now(),
+  createdAt: nowTimestamp(),
 }
 
 export const MOCK_PEER_PREVIEW: PeerPreview = {
