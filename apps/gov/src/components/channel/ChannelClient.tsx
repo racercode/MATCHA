@@ -1,8 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useRouter } from 'next/navigation'
-import type { ChannelMessageItem, ChannelReplyForChannel, GovernmentResource } from '@/types'
-import { getChannelMessages, openHumanThread, getResources } from '@/lib/api'
+import type { ChannelMessageItem, ChannelReplyForChannel } from '@/types'
+import { getChannelMessages, getResources } from '@/lib/api'
 
 function formatTime(ms: number) {
   const d = new Date(ms)
@@ -53,15 +52,10 @@ function Avatar({ name, size = 36 }: { name: string; size?: number }) {
 function ReplyCard({
   reply,
   resourceName,
-  onOpen,
-  opening,
 }: {
   reply: ChannelReplyForChannel
   resourceName: string
-  onOpen: (replyId: string) => void
-  opening: string | null
 }) {
-  const router = useRouter()
   const color = scoreColor(reply.matchScore)
   const bg = scoreBg(reply.matchScore)
 
@@ -113,51 +107,17 @@ function ReplyCard({
           display: '-webkit-box',
           WebkitLineClamp: 2,
           WebkitBoxOrient: 'vertical',
-          marginBottom: 8,
         }}>
           {reply.content}
         </p>
-        <div>
-          {reply.humanThreadOpened && reply.humanThreadId ? (
-            <button
-              onClick={() => router.push(`/threads/${reply.humanThreadId}`)}
-              style={{
-                fontSize: 12,
-                padding: '3px 10px',
-                borderRadius: 4,
-                background: '#eff6ff',
-                color: 'var(--primary)',
-                border: '1px solid #bfdbfe',
-              }}
-            >
-              查看對話
-            </button>
-          ) : (
-            <button
-              onClick={() => onOpen(reply.replyId)}
-              disabled={opening === reply.replyId}
-              style={{
-                fontSize: 12,
-                padding: '3px 10px',
-                borderRadius: 4,
-                background: opening === reply.replyId ? '#9ca3af' : 'var(--primary)',
-                color: '#fff',
-              }}
-            >
-              {opening === reply.replyId ? '開啟中...' : '開啟對話'}
-            </button>
-          )}
-        </div>
       </div>
     </div>
   )
 }
 
-function MessageGroup({ msg, resourceNames, opening, onOpen }: {
+function MessageGroup({ msg, resourceNames }: {
   msg: ChannelMessageItem
   resourceNames: Map<string, string>
-  opening: string | null
-  onOpen: (replyId: string) => void
 }) {
   const [expanded, setExpanded] = useState(true)
 
@@ -206,8 +166,6 @@ function MessageGroup({ msg, resourceNames, opening, onOpen }: {
                   key={reply.replyId}
                   reply={reply}
                   resourceName={resourceNames.get(reply.govId) ?? reply.govId}
-                  onOpen={onOpen}
-                  opening={opening}
                 />
               ))}
             </div>
@@ -223,10 +181,8 @@ const CHANNEL = { id: 'taipei-youth', label: '臺北青年', description: '臺�
 export default function ChannelClient() {
   const [messages, setMessages] = useState<ChannelMessageItem[]>([])
   const [resourceNames, setResourceNames] = useState<Map<string, string>>(new Map())
-  const [opening, setOpening] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const feedRef = useRef<HTMLDivElement>(null)
-  const router = useRouter()
 
   const refresh = useCallback(async (silent = false) => {
     try {
@@ -245,18 +201,6 @@ export default function ChannelClient() {
     const timer = setInterval(() => refresh(true), 10_000)
     return () => clearInterval(timer)
   }, [refresh])
-
-  const handleOpen = async (replyId: string) => {
-    setOpening(replyId)
-    try {
-      const thread = await openHumanThread(replyId)
-      router.push(`/threads/${thread.tid}`)
-    } catch {
-      alert('開啟對話失敗，請稍後再試')
-    } finally {
-      setOpening(null)
-    }
-  }
 
   const memberCount = new Set(messages.map(m => m.uid)).size
 
@@ -304,8 +248,6 @@ export default function ChannelClient() {
               key={msg.msgId}
               msg={msg}
               resourceNames={resourceNames}
-              opening={opening}
-              onOpen={handleOpen}
             />
           ))}
           </div>

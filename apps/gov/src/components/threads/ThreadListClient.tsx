@@ -1,37 +1,23 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import type { ChannelReply, HumanThread } from '@/types'
-import { getThreads, getHumanThreads, openHumanThread, getResources } from '@/lib/api'
+import type { ChannelReply } from '@/types'
+import { getThreads, getResources } from '@/lib/api'
 import { ScoreBar } from '@/components/ui/Badges'
 
 interface Props {
   initialReplies: ChannelReply[]
-  initialThreads: HumanThread[]
 }
 
-function enrichReplies(replies: ChannelReply[], threads: HumanThread[]): ChannelReply[] {
-  const replyToTid = new Map(threads.map((t) => [t.channelReplyId, t.tid]))
-  return replies.map((r) => ({
-    ...r,
-    humanThreadId: replyToTid.get(r.replyId) ?? null,
-  }))
-}
-
-export default function ThreadListClient({ initialReplies, initialThreads }: Props) {
-  const [replies, setReplies] = useState<ChannelReply[]>(() =>
-    enrichReplies(initialReplies, initialThreads)
-  )
+export default function ThreadListClient({ initialReplies }: Props) {
+  const [replies, setReplies] = useState<ChannelReply[]>(initialReplies)
   const [resourceNames, setResourceNames] = useState<Map<string, string>>(new Map())
   const [search, setSearch] = useState('')
   const [minScore, setMinScore] = useState(0)
-  const [opening, setOpening] = useState<string | null>(null)
-  const router = useRouter()
 
   const refresh = useCallback(async () => {
     try {
-      const [r, t, resources] = await Promise.all([getThreads(), getHumanThreads(), getResources()])
-      setReplies(enrichReplies(r, t))
+      const [r, resources] = await Promise.all([getThreads(), getResources()])
+      setReplies(r)
       setResourceNames(new Map(resources.map((res) => [res.rid, res.name])))
     } catch {
       // silently fail on background polls
@@ -43,19 +29,6 @@ export default function ThreadListClient({ initialReplies, initialThreads }: Pro
     const timer = setInterval(refresh, 10_000)
     return () => clearInterval(timer)
   }, [refresh])
-
-  const handleOpen = async (e: React.MouseEvent, replyId: string) => {
-    e.stopPropagation()
-    setOpening(replyId)
-    try {
-      const thread = await openHumanThread(replyId)
-      router.push(`/threads/${thread.tid}`)
-    } catch {
-      alert('開啟對話失敗，請稍後再試')
-    } finally {
-      setOpening(null)
-    }
-  }
 
   const filtered = replies.filter(
     (r) =>
@@ -114,7 +87,7 @@ export default function ThreadListClient({ initialReplies, initialThreads }: Pro
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)', background: '#f9fafb' }}>
-              {['市民', '摘要', '媒合分數', '資源', '狀態', '操作'].map((h) => (
+              {['市民', '摘要', '媒合分數', '資源'].map((h) => (
                 <th key={h} style={{
                   padding: '10px 16px',
                   textAlign: 'left',
@@ -130,7 +103,7 @@ export default function ThreadListClient({ initialReplies, initialThreads }: Pro
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} style={{
+                <td colSpan={4} style={{
                   padding: 48,
                   textAlign: 'center',
                   color: 'var(--text-secondary)',
@@ -144,14 +117,8 @@ export default function ThreadListClient({ initialReplies, initialThreads }: Pro
                 key={reply.replyId}
                 style={{
                   borderBottom: '1px solid var(--border)',
-                  cursor: reply.humanThreadId ? 'pointer' : 'default',
                   transition: 'background 0.1s',
                 }}
-                onClick={() =>
-                  reply.humanThreadId
-                    ? router.push(`/threads/${reply.humanThreadId}`)
-                    : undefined
-                }
                 onMouseEnter={(e) => {
                   (e.currentTarget as HTMLElement).style.background = '#f9fafb'
                 }}
@@ -178,48 +145,6 @@ export default function ThreadListClient({ initialReplies, initialThreads }: Pro
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-secondary)' }}>
                   {resourceNames.get(reply.govId) ?? reply.govId}
-                </td>
-                <td style={{ padding: '12px 16px' }}>
-                  {reply.humanThreadOpened ? (
-                    <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 500 }}>
-                      已開啟對話
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                      待處理
-                    </span>
-                  )}
-                </td>
-                <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
-                  {reply.humanThreadOpened && reply.humanThreadId ? (
-                    <button
-                      onClick={() => router.push(`/threads/${reply.humanThreadId}`)}
-                      style={{
-                        padding: '4px 12px',
-                        borderRadius: 4,
-                        fontSize: 12,
-                        background: '#eff6ff',
-                        color: 'var(--primary)',
-                        border: '1px solid #bfdbfe',
-                      }}
-                    >
-                      查看對話
-                    </button>
-                  ) : (
-                    <button
-                      onClick={(e) => handleOpen(e, reply.replyId)}
-                      disabled={opening === reply.replyId}
-                      style={{
-                        padding: '4px 12px',
-                        borderRadius: 4,
-                        fontSize: 12,
-                        background: opening === reply.replyId ? '#9ca3af' : 'var(--primary)',
-                        color: '#fff',
-                      }}
-                    >
-                      {opening === reply.replyId ? '開啟中...' : '開啟對話'}
-                    </button>
-                  )}
                 </td>
               </tr>
             ))}

@@ -68,7 +68,7 @@ export default function DashboardClient({ initialStats }: { initialStats: Dashbo
           {/* Stat cards */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: 'repeat(2, 1fr)',
             gap: 16,
             marginBottom: 28,
           }}>
@@ -80,15 +80,6 @@ export default function DashboardClient({ initialStats }: { initialStats: Dashbo
               label="平均媒合分數"
               value={stats.avgMatchScore.toFixed(1)}
               sub="分"
-            />
-            <StatCard
-              label="已開啟對話"
-              value={stats.openedConversations}
-              sub={`共 ${stats.totalReplies} 筆`}
-            />
-            <StatCard
-              label="對話開啟率"
-              value={`${(stats.openRate * 100).toFixed(1)}%`}
             />
           </div>
 

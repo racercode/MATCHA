@@ -1,5 +1,5 @@
 import { auth } from './firebase'
-import type { ChannelReply, HumanThread, HumanMessage, GovernmentResource, DashboardStats, ChannelMessageItem } from '@/types'
+import type { ChannelReply, GovernmentResource, DashboardStats, ChannelMessageItem } from '@/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
@@ -28,36 +28,6 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 export async function getThreads(): Promise<ChannelReply[]> {
   const data = await apiFetch<{ items: ChannelReply[] }>('/gov/channel-replies')
   return data.items
-}
-
-export async function getHumanThreads(): Promise<HumanThread[]> {
-  const data = await apiFetch<{ items: HumanThread[] }>('/gov/human-threads')
-  return data.items
-}
-
-export async function getThread(tid: string): Promise<{ thread: HumanThread | null; reply: ChannelReply | null }> {
-  const [replies, threads] = await Promise.all([getThreads(), getHumanThreads()])
-  const thread = threads.find((t) => t.tid === tid) ?? null
-  const reply = thread
-    ? (replies.find((r) => r.replyId === thread.channelReplyId) ?? null)
-    : null
-  return { thread, reply }
-}
-
-export async function openHumanThread(replyId: string): Promise<HumanThread> {
-  return apiFetch<HumanThread>(`/gov/channel-replies/${replyId}/open`, { method: 'POST' })
-}
-
-export async function getHumanMessages(tid: string): Promise<HumanMessage[]> {
-  const data = await apiFetch<{ items: HumanMessage[] }>(`/human-threads/${tid}/messages`)
-  return data.items
-}
-
-export async function sendHumanMessage(tid: string, content: string): Promise<HumanMessage> {
-  return apiFetch<HumanMessage>(`/human-threads/${tid}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ content }),
-  })
 }
 
 export async function getResources(): Promise<GovernmentResource[]> {

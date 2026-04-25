@@ -17,28 +17,6 @@ export interface ChannelReply {
   matchScore: number
   createdAt: number
   citizen: CitizenInfo
-  humanThreadOpened: boolean
-  humanThreadId?: string | null
-}
-
-export interface HumanThread {
-  tid: string
-  type: ThreadType
-  govId: string
-  channelReplyId: string
-  matchScore: number
-  status: ThreadStatus
-  createdAt: number
-  updatedAt: number
-  citizen: CitizenInfo
-}
-
-export interface HumanMessage {
-  mid: string
-  tid?: string
-  from: string
-  content: string
-  createdAt: number | { seconds: number; nanoseconds: number }
 }
 
 export interface GovernmentResource {
@@ -57,8 +35,6 @@ export interface GovernmentResource {
 export interface DashboardStats {
   totalReplies: number
   avgMatchScore: number
-  openedConversations: number
-  openRate: number
   scoreDistribution: {
     '90-100': number
     '70-89': number
@@ -73,8 +49,6 @@ export interface ChannelReplyForChannel {
   content: string
   matchScore: number
   createdAt: number
-  humanThreadOpened: boolean
-  humanThreadId?: string | null
 }
 
 export interface ChannelMessageItem {
