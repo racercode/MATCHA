@@ -97,6 +97,9 @@ async function findExistingSkills(): Promise<Map<string, string>> {
   return map
 }
 
+// Module-level cache: all Gov resource agents share the same two skills
+let sharedSkillIdsPromise: Promise<string[]> | null = null
+
 async function createGovSkill(skillName: string, existing: Map<string, string>): Promise<string> {
   const displayTitle = `MATCHA Gov ${skillName} (${GOV_AGENT_CONFIG_VERSION})`
   const existingId = existing.get(displayTitle)
@@ -123,12 +126,17 @@ async function createGovSkill(skillName: string, existing: Map<string, string>):
 }
 
 async function createGovSkills(): Promise<string[]> {
-  const existing = await findExistingSkills()
-  const ids: string[] = []
-  for (const name of ['read_channel', 'query_resource_pdf']) {
-    ids.push(await createGovSkill(name, existing))
+  if (!sharedSkillIdsPromise) {
+    sharedSkillIdsPromise = (async () => {
+      const existing = await findExistingSkills()
+      const ids: string[] = []
+      for (const name of ['read_channel', 'query_resource_pdf']) {
+        ids.push(await createGovSkill(name, existing))
+      }
+      return ids
+    })().catch(err => { sharedSkillIdsPromise = null; throw err })
   }
-  return ids
+  return sharedSkillIdsPromise
 }
 
 function toSkillParams(skillIds: string[]) {

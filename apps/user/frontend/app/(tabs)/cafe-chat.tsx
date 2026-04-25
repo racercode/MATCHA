@@ -57,6 +57,7 @@ export default function CafeChatScreen() {
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch(`${API_BASE_URL}/me/peer-threads`, { headers });
       const json = await res.json();
+      console.log('[CafeChat] peer-threads response:', JSON.stringify(json).slice(0, 300));
       if (json.success) {
         setItems(json.data.items as PeerThreadListItem[]);
       }
