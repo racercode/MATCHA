@@ -8,11 +8,13 @@
     "dev:mock": "tsx watch src/index.ts --mock",
     "mock": "tsx src/mock/server.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "gov:run": "tsx src/agent/gov/main.ts",
+    "gov:test": "node --import tsx --test src/agent/gov/pipeline.test.ts"
   },
   "dependencies": {
     "@matcha/shared-types": "workspace:*",
-    "@anthropic-ai/sdk": "^0.52.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "express": "^4.19.2",
     "cors": "^2.8.5",
     "ws": "^8.17.0",

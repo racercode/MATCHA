@@ -1,1 +1,19 @@
 node_modules/
+
+# env & secrets
+.env
+.env.*
+
+# build output
+dist/
+services/api/dist/
+
+# npm lockfile (project uses pnpm)
+package-lock.json
+
+# personal scripts
+command.ps
+
+# runtime-generated agent registry
+services/api/src/agent/general/governmentAgents.json
+services/api/src/agent/general/userAgents.json
