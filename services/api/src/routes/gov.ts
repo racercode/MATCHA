@@ -171,7 +171,6 @@ function serializeGovChannelReply(reply: FirestoreChannelReply, citizenUid = '')
     matchScore: reply.matchScore,
     createdAt: toMs(reply.createdAt),
     citizen: { uid: citizenUid, displayName: citizenUid, summary: '' },
-    humanThreadOpened: false,
   }
 }
 
@@ -226,45 +225,39 @@ router.get('/gov/channel-messages', async (req, res) => {
   const { govId } = req as unknown as AuthedRequest
   const limit = Math.min(Number(req.query.limit) || 30, 100)
 
-  const [msgsSnap, repliesSnap, threadsSnap] = await Promise.all([
-    db.collection('channel_messages').orderBy('publishedAt', 'desc').limit(limit).get(),
-    db.collection('channel_replies').where('govId', '==', govId).get(),
-    db.collection('human_threads').where('govId', '==', govId).get(),
+  const [msgsSnap, repliesSnap] = await Promise.all([
+    db.collection('channel_messages').get(),
+    db.collection('channel_replies').get(),
   ])
 
-  const messages = msgsSnap.docs.map(d => ({
-    msgId: d.id,
-    uid: String(d.data().uid ?? ''),
-    summary: String(d.data().summary ?? ''),
-    publishedAt: toMs(d.data().publishedAt ?? d.data().createdAt ?? { seconds: 0, nanoseconds: 0 }),
-  }))
+  const messages = msgsSnap.docs
+    .map(d => ({
+      msgId: d.id,
+      uid: String(d.data().uid ?? ''),
+      summary: String(d.data().summary ?? ''),
+      publishedAt: toMs(d.data().publishedAt ?? d.data().createdAt ?? { seconds: 0, nanoseconds: 0 }),
+    }))
+    .sort((a, b) => b.publishedAt - a.publishedAt)
+    .slice(0, limit)
 
   const citizenUids = [...new Set(messages.map(m => m.uid).filter(Boolean))]
   const personaMap = new Map<string, { displayName: string }>()
   await Promise.all(citizenUids.map(async uid => {
-    const doc = await db.collection('personas').doc(uid).get()
-    if (doc.exists) personaMap.set(uid, { displayName: String(doc.data()!.displayName ?? uid) })
+    const doc = await db.collection('userProfiles').doc(uid).get()
+    if (doc.exists) personaMap.set(uid, { displayName: String(doc.data()!.name ?? uid) })
   }))
-
-  const openedReplies = new Map<string, string>()
-  for (const doc of threadsSnap.docs) {
-    openedReplies.set(String(doc.data().channelReplyId), doc.id)
-  }
 
   const replyByMsg = new Map<string, unknown[]>()
   for (const doc of repliesSnap.docs) {
     const r = doc.data()
     const msgId = String(r.messageId)
     if (!replyByMsg.has(msgId)) replyByMsg.set(msgId, [])
-    const tid = openedReplies.get(doc.id) ?? null
     replyByMsg.get(msgId)!.push({
       replyId: doc.id,
       govId: r.govId,
       content: r.content,
       matchScore: r.matchScore,
       createdAt: toMs(r.createdAt ?? { seconds: 0, nanoseconds: 0 }),
-      humanThreadOpened: openedReplies.has(doc.id),
-      humanThreadId: tid,
     })
   }
 
@@ -309,18 +302,15 @@ router.get('/gov/channel-replies', async (req, res) => {
     return
   }
 
-  const [repliesSnap, msgsSnap, threadsSnap] = await Promise.all([
+  const [repliesSnap, msgsSnap] = await Promise.all([
     db.collection('channel_replies').where('govId', '==', govId).get(),
     db.collection('channel_messages').get(),
-    db.collection('human_threads').where('govId', '==', govId).get(),
   ])
 
   const msgToUid = new Map<string, string>()
   for (const doc of msgsSnap.docs) {
     msgToUid.set(doc.id, doc.data().uid as string)
   }
-
-  const openedReplies = new Set(threadsSnap.docs.map(d => d.data().channelReplyId as string))
 
   type ReplyDoc = { replyId: string; messageId: string; govId: string; content: string; matchScore: number; createdAt: number }
   const items = repliesSnap.docs
@@ -336,18 +326,16 @@ router.get('/gov/channel-replies', async (req, res) => {
         matchScore: r.matchScore,
         createdAt: r.createdAt,
         citizen: { uid: citizenUid, displayName: citizenUid, summary: '' },
-        humanThreadOpened: openedReplies.has(r.replyId),
       }
     })
     .sort((a, b) => b.createdAt - a.createdAt)
 
-  // Enrich citizen info from personas
   const citizenUids = [...new Set(items.map(i => i.citizen.uid).filter(Boolean))]
   const personaMap = new Map<string, { displayName: string; summary: string }>()
   await Promise.all(citizenUids.map(async uid => {
-    const doc = await db.collection('personas').doc(uid).get()
+    const doc = await db.collection('userProfiles').doc(uid).get()
     if (doc.exists) {
-      personaMap.set(uid, { displayName: doc.data()!.displayName as string, summary: doc.data()!.summary as string })
+      personaMap.set(uid, { displayName: String(doc.data()!.name ?? uid), summary: String(doc.data()!.bio ?? '') })
     }
   }))
 
@@ -361,56 +349,6 @@ router.get('/gov/channel-replies', async (req, res) => {
   }))
 
   res.json({ success: true, data: { items: enriched.slice(0, limit), hasMore: enriched.length > limit } })
-})
-
-// POST /gov/channel-replies/:replyId/open — open a HumanThread for a matched citizen
-router.post('/gov/channel-replies/:replyId/open', async (req, res) => {
-  const { govId } = req as unknown as AuthedRequest
-  const { replyId } = req.params
-
-  const replyDoc = await db.collection('channel_replies').doc(replyId).get()
-  if (!replyDoc.exists) {
-    res.status(404).json({ success: false, error: '回覆不存在', data: null })
-    return
-  }
-  const reply = replyDoc.data()!
-  if (reply.govId !== govId) {
-    res.status(403).json({ success: false, error: '無存取權限', data: null })
-    return
-  }
-
-  // Idempotent: return existing thread if already opened
-  const existingSnap = await db.collection('human_threads')
-    .where('channelReplyId', '==', replyId)
-    .get()
-  if (!existingSnap.empty) {
-    const doc = existingSnap.docs[0]
-    res.json({ success: true, data: { tid: doc.id, ...doc.data() } })
-    return
-  }
-
-  const msgDoc = await db.collection('channel_messages').doc(reply.messageId as string).get()
-  if (!msgDoc.exists) {
-    res.status(404).json({ success: false, error: '原始訊息不存在', data: null })
-    return
-  }
-  const msg = msgDoc.data()!
-
-  const now = Date.now()
-  const tid = `ht-${now}`
-  const thread = {
-    type: 'gov_user' as const,
-    userId: msg.uid as string,
-    govId: reply.govId as string,
-    channelReplyId: replyId,
-    matchScore: reply.matchScore as number,
-    status: 'open' as const,
-    createdAt: now,
-    updatedAt: now,
-  }
-
-  await db.collection('human_threads').doc(tid).set(thread)
-  res.status(201).json({ success: true, data: { tid, ...thread } })
 })
 
 router.post('/gov/agent/run', async (req, res) => {
@@ -468,22 +406,14 @@ router.get('/gov/dashboard', async (req, res) => {
   const { govId } = req as unknown as AuthedRequest
   const since = req.query.since ? Number(req.query.since) : Date.now() - 7 * 86_400_000
 
-  const [repliesSnap, threadsSnap] = await Promise.all([
-    db.collection('channel_replies').where('govId', '==', govId).get(),
-    db.collection('human_threads').where('govId', '==', govId).get(),
-  ])
+  const repliesSnap = await db.collection('channel_replies').where('govId', '==', govId).get()
 
   const myReplies = repliesSnap.docs
     .map(d => d.data() as { createdAt: number; matchScore: number })
     .filter(r => r.createdAt >= since)
 
-  const openedConversations = threadsSnap.docs
-    .filter(d => toMs(d.data().createdAt) >= since)
-    .length
-
   const totalReplies = myReplies.length
   const avgMatchScore = totalReplies ? myReplies.reduce((s, r) => s + r.matchScore, 0) / totalReplies : 0
-  const openRate = totalReplies ? openedConversations / totalReplies : 0
 
   const dist: Record<string, number> = { '90-100': 0, '70-89': 0, '50-69': 0, '0-49': 0 }
   for (const r of myReplies) {
@@ -498,53 +428,9 @@ router.get('/gov/dashboard', async (req, res) => {
     data: {
       totalReplies,
       avgMatchScore: Math.round(avgMatchScore * 10) / 10,
-      openedConversations,
-      openRate: Math.round(openRate * 100) / 100,
       scoreDistribution: dist,
     },
   })
-})
-
-// GET /gov/human-threads
-router.get('/gov/human-threads', async (req, res) => {
-  const { govId } = req as unknown as AuthedRequest
-  const since = Number(req.query.since) || 0
-  const limit = Math.min(Number(req.query.limit) || 20, 100)
-
-  type GovThreadDoc = { tid: string; type: string; govId: string; userId: string; channelReplyId: string; matchScore: number; status: string; createdAt: number | any; updatedAt: number | any }
-  const snap = await db.collection('human_threads').where('govId', '==', govId).get()
-  const threads: GovThreadDoc[] = snap.docs
-    .map(d => ({ tid: d.id, ...(d.data() as Omit<GovThreadDoc, 'tid'>) }))
-    .filter(t => toMs(t.updatedAt) > since)
-
-  const citizenUids = [...new Set(threads.map(t => t.userId))]
-  const personaMap = new Map<string, { displayName: string; summary: string }>()
-  await Promise.all(citizenUids.map(async uid => {
-    const doc = await db.collection('personas').doc(uid).get()
-    if (doc.exists) {
-      personaMap.set(uid, { displayName: doc.data()!.displayName as string, summary: doc.data()!.summary as string })
-    }
-  }))
-
-  const items = threads
-    .map(t => ({
-      tid: t.tid,
-      type: t.type,
-      govId: t.govId,
-      channelReplyId: t.channelReplyId,
-      matchScore: t.matchScore,
-      status: t.status,
-      createdAt: toMs(t.createdAt),
-      updatedAt: toMs(t.updatedAt),
-      citizen: {
-        uid: t.userId,
-        displayName: personaMap.get(t.userId)?.displayName ?? t.userId,
-        summary: personaMap.get(t.userId)?.summary ?? '',
-      },
-    }))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-
-  res.json({ success: true, data: { items: items.slice(0, limit), hasMore: items.length > limit } })
 })
 
 // GET /gov/resources

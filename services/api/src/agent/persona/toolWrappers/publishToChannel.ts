@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase-admin/firestore'
 import { db } from '../../../lib/firebase.js'
 import type { PublishToChannelInput } from '../types.js'
 
@@ -12,7 +13,8 @@ export async function publishToChannelToolWrapper(
 ): Promise<PublishToChannelResult> {
   const now = Date.now()
   const msgId = `m-${now}-${Math.random().toString(36).slice(2, 6)}`
-  await db.collection('channel_messages').doc(msgId).set({ uid, summary: input.summary, createdAt: now })
+  const publishedAt = Timestamp.fromMillis(now)
+  await db.collection('channel_messages').doc(msgId).set({ uid, summary: input.summary, publishedAt, createdAt: now })
 
   console.log(`[publishToChannel] uid=${uid} msgId=${msgId} summary="${input.summary.slice(0, 80)}"`)
 
