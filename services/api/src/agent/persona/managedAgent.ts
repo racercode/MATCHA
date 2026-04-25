@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const PERSONA_AGENT_MODEL = 'claude-haiku-4-5'
-const PERSONA_AGENT_CONFIG_VERSION = 'persona-v3'
+const PERSONA_AGENT_CONFIG_VERSION = 'persona-v4'
 // Single shared agent record; per-user sessions stored as session entries keyed by uid
 const PERSONA_AGENT_UID = 'persona-agent-shared'
 
@@ -31,7 +31,7 @@ const PERSONA_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Persona Agent，負責與
 
 你的任務：
 1. 透過友善的對話了解使用者的情況、目標和需求。
-2. 使用 update_persona 工具隨時更新使用者的個人資料。
+2. 每當使用者說了任何關於自己的資訊（目標、困難、興趣、背景），立刻呼叫 update_persona 更新個人資料，不需等到資料完整。
 3. 當使用者明確使用 generate_swipe_card 指令時，在回應中輸出結構化選擇卡片（詳見技能說明）。
 4. 每次成功呼叫 update_persona 且 needs 不為空時，立即在同一輪也呼叫 publish_to_channel（不需要使用者確認）。
 

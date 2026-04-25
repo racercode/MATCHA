@@ -70,19 +70,28 @@ export async function runPeerAgentIntro(
   threadId: string,
   userAId: string,
   userBId: string,
+  fallbackA?: Persona,
+  fallbackB?: Persona,
 ): Promise<void> {
-  const [docA, docB] = await Promise.all([
-    db.collection('personas').doc(userAId).get(),
-    db.collection('personas').doc(userBId).get(),
-  ])
+  // Use fallback data from proposePeerMatch (already fetched) to avoid re-fetching
+  // and to handle cases where one user's persona was deleted after matching
+  let pA = fallbackA
+  let pB = fallbackB
 
-  if (!docA.exists || !docB.exists) {
-    console.warn(`[PeerIntro] Missing persona: A=${docA.exists} B=${docB.exists}, skipping intro`)
+  if (!pA || !pB) {
+    const [docA, docB] = await Promise.all([
+      db.collection('personas').doc(userAId).get(),
+      db.collection('personas').doc(userBId).get(),
+    ])
+    pA = pA ?? (docA.exists ? docA.data() as Persona : undefined)
+    pB = pB ?? (docB.exists ? docB.data() as Persona : undefined)
+  }
+
+  if (!pA || !pB) {
+    console.warn(`[PeerIntro] Cannot build intro: missing persona for ${!pA ? userAId : userBId}, skipping`)
     return
   }
 
-  const pA = docA.data() as Persona
-  const pB = docB.data() as Persona
   const nameA = pA.displayName || `使用者${userAId.slice(0, 5)}`
   const nameB = pB.displayName || `使用者${userBId.slice(0, 5)}`
 
