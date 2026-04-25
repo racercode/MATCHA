@@ -1,6 +1,6 @@
 import { Router, type Router as IRouter } from 'express'
 import multer from 'multer'
-import type { ChannelMessage, GovernmentResource as AgentGovernmentResource } from '@matcha/shared-types'
+import { msToTimestamp, nowTimestamp, type ChannelMessage, type GovernmentResource as AgentGovernmentResource } from '@matcha/shared-types'
 import { verifyToken, requireGovStaff, type AuthedRequest } from '../middleware/auth.js'
 import { fakeChannelMessages, fakeGovernmentResources } from '../agent/gov/fakeData.js'
 import { initGovManagedAgentSession } from '../agent/gov/managedAgent.js'
@@ -47,11 +47,17 @@ export function normalizeChannelMessage(input: RunGovAgentRequestBody['message']
     return null
   }
 
+  const publishedAt =
+    input.publishedAt ??
+    (typeof (input as Record<string, unknown>).publishedAtMs === 'number'
+      ? msToTimestamp((input as Record<string, unknown>).publishedAtMs as number)
+      : nowTimestamp())
+
   return {
     msgId: input.msgId,
     uid: input.uid,
     summary: input.summary,
-    publishedAt: typeof input.publishedAt === 'number' ? input.publishedAt : Date.now(),
+    publishedAt,
   }
 }
 

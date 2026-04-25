@@ -12,8 +12,17 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import type { AgentThread, ThreadMessage, Timestamp } from '@matcha/shared-types';
+import type { Timestamp } from '@matcha/shared-types';
 import { msToTimestamp, toMs } from '@matcha/shared-types';
+
+type ChatMessage = {
+  mid: string
+  tid: string
+  from: string
+  type: 'answer' | 'query' | 'human_note'
+  content: Record<string, unknown>
+  createdAt: Timestamp
+};
 import type { ClientEvent, ServerEvent } from '@matcha/shared-types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/ThemedText';
@@ -39,21 +48,7 @@ const PERSONA_AGENT_ID = 'gov:persona-agent-01';
 
 export const getPersonaThreadId = (uid: string) => `thread-persona-chat-${uid}`;
 
-const buildMockThread = (uid: string): AgentThread => ({
-  tid: getPersonaThreadId(uid),
-  type: 'gov_user',
-  initiatorId: PERSONA_AGENT_ID,
-  responderId: `user:${uid}`,
-  status: 'matched',
-  matchScore: 91,
-  summary: 'General chat with the persona agent.',
-  userPresence: 'human',
-  govPresence: 'agent',
-  createdAt: msToTimestamp(Date.now() - 1000 * 60 * 45),
-  updatedAt: msToTimestamp(Date.now() - 1000 * 60 * 2),
-});
-
-const buildSeedMessages = (threadId: string, uid: string): ThreadMessage[] => [
+const buildSeedMessages = (threadId: string, uid: string): ChatMessage[] => [
   {
     mid: 'm-001',
     tid: threadId,
@@ -136,7 +131,7 @@ function TypingBubble({ text }: { text: string }) {
   );
 }
 
-function MessageBubble({ message, isOwnMessage }: { message: ThreadMessage; isOwnMessage: boolean }) {
+function MessageBubble({ message, isOwnMessage }: { message: ChatMessage; isOwnMessage: boolean }) {
   const content = message.content;
 
   if (isPostPreview(content)) {
@@ -167,9 +162,9 @@ export default function ChatThreadScreen() {
   const headerHeight = useHeaderHeight();
   const params = useLocalSearchParams<{ tid?: string }>();
   const [draft, setDraft] = useState('');
-  const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState<string | null>(null);
-  const listRef = useRef<FlatList<ThreadMessage>>(null);
+  const listRef = useRef<FlatList<ChatMessage>>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const streamBufferRef = useRef('');
 
@@ -278,7 +273,7 @@ export default function ChatThreadScreen() {
 
     // Send to mock server via WebSocket
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const event: ClientEvent = { type: 'chat_message', content };
+      const event: ClientEvent = { type: 'persona_message', content };
       wsRef.current.send(JSON.stringify(event));
     }
   };

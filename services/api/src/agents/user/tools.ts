@@ -1,5 +1,4 @@
 import type { SwipeCard } from '@matcha/shared-types'
-import { broadcast } from '../../ws/handler.js'
 
 // ---------------------------------------------------------------------------
 // Custom tool JSON schemas (used in setup.ts)
@@ -140,9 +139,9 @@ export async function executePersonaTool(
     }
 
     case 'present_swipe_cards': {
+      // Swipe is client-side UI state; return the cards as data for the agent reply to reference
       const { cards } = input as { cards: SwipeCard[] }
-      broadcast(uid, { type: 'swipe_card', card: cards[0] })
-      return { queued: cards.length }
+      return { queued: cards.length, cards }
     }
 
     case 'request_human_review': {

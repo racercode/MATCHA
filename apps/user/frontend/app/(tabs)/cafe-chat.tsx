@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Dimensions, Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { AgentThread, PeerPreview } from '@matcha/shared-types';
+import type { PeerPreview, Timestamp } from '@matcha/shared-types';
 import { toMs } from '@matcha/shared-types';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/containers/hooks/useAuth';
 import { API_BASE_URL } from '@/lib/api';
 
-type PeerThreadItem = {
-  thread: AgentThread;
+type PeerThreadListItem = {
+  tid: string;
+  type: 'user_user';
   peer: PeerPreview;
   bullets: string[];
+  matchRationale: string;
+  matchScore?: number;
+  status: 'active' | 'closed';
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 };
 
 const MODAL_WIDTH = Dimensions.get('window').width - 40;
@@ -21,7 +27,7 @@ const PEER_AVATARS = [
   require('@/assets/icons/karina.png'),
 ]
 
-const formatRelativeLabel = (createdAt: AgentThread['updatedAt']) => {
+const formatRelativeLabel = (createdAt: Timestamp) => {
   const diffDays = Math.max(0, Math.floor((Date.now() - toMs(createdAt)) / (1000 * 60 * 60 * 24)));
   if (diffDays <= 0) return '今天';
   if (diffDays === 1) return '昨天';
@@ -39,7 +45,7 @@ export default function CafeChatScreen() {
   const { top } = useSafeAreaInsets();
   const { user } = useAuth();
   const currentUserId = user?.uid ?? 'mock-uid-001';
-  const [items, setItems] = useState<PeerThreadItem[]>([]);
+  const [items, setItems] = useState<PeerThreadListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isInsightModalVisible, setIsInsightModalVisible] = useState(true);
 
@@ -50,7 +56,7 @@ export default function CafeChatScreen() {
       .then((res) => res.json())
       .then((json) => {
         if (isMounted && json.success) {
-          setItems(json.data.items as PeerThreadItem[]);
+          setItems(json.data.items as PeerThreadListItem[]);
         }
       })
       .catch((err) => console.warn('[CafeChat] fetch 失敗', err))
@@ -111,7 +117,7 @@ export default function CafeChatScreen() {
           <ThemedText style={styles.loadingText}>載入中…</ThemedText>
         ) : (
           items.map((item, index) => (
-            <View key={item.thread.tid} style={[styles.sessionRow, index > 0 && styles.sessionRowSpacing]}>
+            <View key={item.tid} style={[styles.sessionRow, index > 0 && styles.sessionRowSpacing]}>
               <View style={styles.avatarWrapper}>
                 <View style={styles.singleAvatar}>
                   <Image source={PEER_AVATARS[index % PEER_AVATARS.length]} style={styles.avatarImage} resizeMode="cover" />
@@ -123,11 +129,11 @@ export default function CafeChatScreen() {
                 <ThemedText style={styles.partnerName}>{item.peer.displayName}</ThemedText>
                 <ThemedText style={styles.tagLine}>
                   <ThemedText style={styles.tagText}>{item.bullets.slice(0, 2).join('、')}</ThemedText>
-                  {item.thread.matchScore != null ? (
-                    <ThemedText style={styles.tagText}>{` / 最近 ${scoreToHighlight(item.thread.matchScore)}`}</ThemedText>
+                  {item.matchScore != null ? (
+                    <ThemedText style={styles.tagText}>{` / 最近 ${scoreToHighlight(item.matchScore)}`}</ThemedText>
                   ) : null}
                 </ThemedText>
-                <ThemedText style={styles.dateLabel}>{formatRelativeLabel(item.thread.updatedAt)}</ThemedText>
+                <ThemedText style={styles.dateLabel}>{formatRelativeLabel(item.updatedAt)}</ThemedText>
               </View>
             </View>
           ))

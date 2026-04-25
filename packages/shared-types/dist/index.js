@@ -5,7 +5,7 @@
 // ALL changes here require notifying all three groups.
 // =============================================================================
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MOCK_PEER_PREVIEW = exports.MOCK_THREAD = exports.MOCK_RESOURCE = exports.MOCK_PERSONA = exports.nowTimestamp = exports.msToTimestamp = exports.toMs = void 0;
+exports.MOCK_PEER_PREVIEW = exports.MOCK_RESOURCE = exports.MOCK_PERSONA = exports.nowTimestamp = exports.msToTimestamp = exports.toMs = void 0;
 /** Convert any Timestamp to unix milliseconds */
 const toMs = (ts) => ts.toMillis?.() ?? ts.seconds * 1000 + Math.floor(ts.nanoseconds / 1_000_000);
 exports.toMs = toMs;
@@ -38,18 +38,6 @@ exports.MOCK_RESOURCE = {
     eligibilityCriteria: ['年齡 18–29 歲', '具中華民國國籍', '非在學中'],
     contactUrl: 'https://www.mol.gov.tw',
     createdAt: (0, exports.nowTimestamp)(),
-};
-exports.MOCK_THREAD = {
-    tid: 'mock-tid-001',
-    type: 'gov_user',
-    initiatorId: 'gov:mock-rid-001',
-    responderId: 'user:mock-uid-001',
-    status: 'negotiating',
-    matchScore: 82,
-    userPresence: 'agent',
-    govPresence: 'agent',
-    createdAt: (0, exports.msToTimestamp)(Date.now() - 60_000),
-    updatedAt: (0, exports.nowTimestamp)(),
 };
 exports.MOCK_PEER_PREVIEW = {
     uid: 'mock-uid-002',
