@@ -2,6 +2,7 @@ import { Tabs, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Platform, Pressable, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { getPersonaThreadId } from '@/components/chat/ChatThreadScreen';
 import { HapticTab } from '@/components/HapticTab';
 import TabBarBackground from '@/components/ui/TabBarBackground';
@@ -75,6 +76,15 @@ export default function TabLayout() {
               source={focused ? require('@/assets/icons/CafeTab1.svg') : require('@/assets/icons/CafeTab.svg')}
               style={{ width: 32, height: 29 }}
             />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="human-threads"
+        options={{
+          title: '政府聯絡',
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'people' : 'people-outline'} size={28} color={color} />
           ),
         }}
       />

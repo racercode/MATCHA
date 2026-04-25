@@ -37,6 +37,14 @@ export default function RootLayout() {
                 headerBackTitle: 'Back',
               }}
             />
+            <Stack.Screen
+              name="human-thread/[tid]"
+              options={{
+                presentation: 'card',
+                title: 'Staff Chat',
+                headerBackTitle: 'Back',
+              }}
+            />
             <Stack.Screen name="signin" options={{ headerShown: false }} />
             <Stack.Screen name="+not-found" />
           </Stack>
