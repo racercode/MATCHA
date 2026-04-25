@@ -93,19 +93,22 @@ async function findExistingSkills(): Promise<Map<string, string>> {
 async function createGovSkill(skillName: string, existing: Map<string, string>): Promise<string> {
   const displayTitle = `MATCHA Gov ${skillName} (${GOV_AGENT_CONFIG_VERSION})`
   const existingId = existing.get(displayTitle)
-  if (existingId) {
-    return existingId
-  }
+  if (existingId) return existingId
 
   const skillPath = path.join(__dirname, 'skills', skillName, 'SKILL.md')
   const content = await readFile(skillPath, 'utf8')
   const file = await Anthropic.toFile(Buffer.from(content, 'utf8'), `${skillName}/SKILL.md`)
-  const skill = await client.beta.skills.create({
-    display_title: displayTitle,
-    files: [file],
-  })
-
-  return skill.id
+  try {
+    const skill = await client.beta.skills.create({ display_title: displayTitle, files: [file] })
+    return skill.id
+  } catch (err: any) {
+    if (err?.status === 400 && err?.message?.includes('cannot reuse an existing display_title')) {
+      const refreshed = await findExistingSkills()
+      const refreshedId = refreshed.get(displayTitle)
+      if (refreshedId) return refreshedId
+    }
+    throw err
+  }
 }
 
 async function createGovSkills(): Promise<string[]> {
