@@ -49,7 +49,7 @@ sequenceDiagram
 
     Persona->>Channel: publish_to_channel(ChannelMessage)
     Gov->>Channel: read_channel()
-    Gov->>Resource: query_resource_pdf()
+    Gov->>Resource: query_resource_document()
     Gov->>Claude: evaluate_match(channelMessage, resource)
     Claude-->>Gov: MatchDecision JSON
     Gov->>Reply: write ChannelReply
@@ -60,7 +60,7 @@ sequenceDiagram
 Gov Agent 最早只需要做到：
 
 - `read_channel`
-- `query_resource_pdf`
+- `query_resource_document`
 - `init_managed_agent`
 - `evaluate_match_with_claude`
 
@@ -378,7 +378,7 @@ services/api/src/agent/gov/
 │   └── index.ts
 ├── skills/
 │   ├── read_channel/SKILL.md
-│   ├── query_resource_pdf/SKILL.md
+│   ├── query_resource_document/SKILL.md
 │   ├── write_channel_reply/SKILL.md
 │   └── escalate_to_caseworker/SKILL.md
 └── pipeline.ts
@@ -412,8 +412,8 @@ runGovAgentPipeline
 
 - `read_channel` Markdown Skill：說明何時呼叫 `read_channel` custom tool
 - `read_channel` custom tool：由 Claude 自主呼叫，後端執行 `readChannelToolWrapper`
-- `query_resource_pdf` Markdown Skill：說明何時呼叫 `query_resource_pdf` custom tool
-- `query_resource_pdf` custom tool：由 Claude 自主呼叫，後端執行 `queryResourcePdfToolWrapper`
+- `query_resource_document` Markdown Skill：說明何時呼叫 `query_resource_document` custom tool
+- `query_resource_document` custom tool：由 Claude 自主呼叫，後端執行 `queryResourcePdfToolWrapper`
 - `write_channel_reply` Markdown Skill：說明何時呼叫 `write_channel_reply` custom tool
 - `write_channel_reply` custom tool：由 Claude 自主呼叫，後端執行 `writeChannelReplyToolWrapper`
 - Pipeline：負責喚醒 agent、處理 custom tool events、收集最後的 match JSON 或 `null`
@@ -440,7 +440,7 @@ export async function readChannelToolWrapper(): Promise<ChannelMessage[]> {
 
 ### 6.3 Step 2：查詢本 resource 的資料與文件
 
-`query_resource_pdf` Markdown Skill 指向 `query_resource_pdf` custom tool；後端收到 custom tool event 後，執行 `queryResourcePdfToolWrapper`。正式環境會用 runtime context 的 `resourceId` 查 Firestore `gov_resources/{rid}` 與 `gov_resources/{rid}/documents/*`，不允許 Agent 自己指定其他 resource。
+`query_resource_document` Markdown Skill 指向 `query_resource_document` custom tool；後端收到 custom tool event 後，執行 `queryResourcePdfToolWrapper`。正式環境會用 runtime context 的 `resourceId` 查 Firestore `gov_resources/{rid}` 與 `gov_resources/{rid}/documents/*`，不允許 Agent 自己指定其他 resource。
 
 ```ts
 import type { GovernmentResource, GovernmentResourceDocument } from '@matcha/shared-types'
@@ -589,7 +589,7 @@ export async function runGovAgentForChannelUpdate(
 
   // Handle agent.custom_tool_use events:
   // - read_channel -> readChannelToolWrapper
-  // - query_resource_pdf -> queryResourcePdfToolWrapper
+  // - query_resource_document -> queryResourcePdfToolWrapper
   // - write_channel_reply -> writeChannelReplyToolWrapper
   // Then send user.custom_tool_result back to the session.
 
@@ -603,7 +603,7 @@ Custom tool 執行流程：
 
 ```txt
 Claude Managed Agent
-  -> agent.custom_tool_use(read_channel / query_resource_pdf / write_channel_reply)
+  -> agent.custom_tool_use(read_channel / query_resource_document / write_channel_reply)
 Backend pipeline
   -> execute matching tool wrapper
   -> user.custom_tool_result
@@ -698,7 +698,7 @@ export async function runGovAgentPipeline(
 }
 ```
 
-> 注意：`runGovAgentPipeline` 不再預先列出所有 resource 組合；它只把 channel update 交給 Claude Managed Agent。Agent 依照 Markdown Skill 自己決定是否呼叫 `read_channel`、`query_resource_pdf`、`write_channel_reply` custom tools。
+> 注意：`runGovAgentPipeline` 不再預先列出所有 resource 組合；它只把 channel update 交給 Claude Managed Agent。Agent 依照 Markdown Skill 自己決定是否呼叫 `read_channel`、`query_resource_document`、`write_channel_reply` custom tools。
 
 ### 6.10 Markdown Skill contract 設計
 
@@ -749,11 +749,11 @@ read_channel skill -> readChannelToolWrapper -> Firestore channel_messages
 read_channel skill -> MCP tool -> Firestore channel_messages
 ```
 
-#### `query_resource_pdf`
+#### `query_resource_document`
 
 用途：查詢這個 Resource Agent 綁定的單一政府方案資料，以及該方案底下所有可供判斷的文件文字。
 
-> 名稱仍保留 `query_resource_pdf` 是為了相容既有 Managed Agent tool 註冊；實際語意已是 `query_resource_documents`。
+> 名稱仍保留 `query_resource_document` 是為了相容既有 Managed Agent tool 註冊；實際語意已是 `query_resource_documents`。
 
 Input：
 
@@ -778,13 +778,13 @@ interface QueryProgramDocsOutput {
 Markdown Skill：
 
 ```txt
-skills/query_resource_pdf/SKILL.md
+skills/query_resource_document/SKILL.md
 ```
 
 Tool target：
 
 ```txt
-query_resource_pdf skill
+query_resource_document skill
 -> queryResourcePdfToolWrapper
 -> Firestore gov_resources/{rid}
 -> Firestore gov_resources/{rid}/documents/*
@@ -793,13 +793,13 @@ query_resource_pdf skill
 No-Firebase fallback：
 
 ```txt
-query_resource_pdf skill -> queryResourcePdfToolWrapper -> fakeData.ts summary document
+query_resource_document skill -> queryResourcePdfToolWrapper -> fakeData.ts summary document
 ```
 
 RAG 版：
 
 ```txt
-query_resource_pdf skill -> MCP tool -> vector DB / policy docs
+query_resource_document skill -> MCP tool -> vector DB / policy docs
 ```
 
 #### `write_channel_reply`
@@ -884,7 +884,7 @@ services/
                 ├── skills/
                 │   ├── read_channel/
                 │   │   └── SKILL.md
-                │   ├── query_resource_pdf/
+                │   ├── query_resource_document/
                 │   │   └── SKILL.md
                 │   ├── write_channel_reply/
                 │   │   └── SKILL.md
@@ -932,7 +932,7 @@ Pipeline 不應該直接碰 Firebase、Firestore 或 WebSocket。它只負責：
 
 ```txt
 skills/read_channel/SKILL.md
-skills/query_resource_pdf/SKILL.md
+skills/query_resource_document/SKILL.md
 skills/write_channel_reply/SKILL.md
 skills/escalate_to_caseworker/SKILL.md
 ```
@@ -995,7 +995,7 @@ and creates channel replies for Match Inbox polling.
 4. 建立 `services/api/src/agent/gov/skills/*/SKILL.md`
 5. 建立 `services/api/src/agent/gov/toolWrappers/`
 6. 寫 `read_channel` Markdown Skill，指向 `readChannelToolWrapper`
-7. 寫 `query_resource_pdf` Markdown Skill，指向 `queryResourcePdfToolWrapper`
+7. 寫 `query_resource_document` Markdown Skill，指向 `queryResourcePdfToolWrapper`
 8. 寫 `write_channel_reply` Markdown Skill，指向 `writeChannelReplyToolWrapper`
 9. 寫 `initGovManagedAgentSession`
 10. 寫 `evaluateMatchWithClaude`
@@ -1234,7 +1234,7 @@ Persona Agent writes channel_messages/{messageId}
    - `listGovernmentResourceDocuments(rid)`
    - `createGovernmentResourceDocument(rid, document)`
    - 從 Firestore `gov_resources` 讀正式資源，不再用 fake resources 跑 trigger flow
-   - 從 Firestore `gov_resources/{rid}/documents/*` 讀 resource 文件文字，提供給 `query_resource_pdf`
+   - 從 Firestore `gov_resources/{rid}/documents/*` 讀 resource 文件文字，提供給 `query_resource_document`
 3. 建立 `services/api/src/lib/govAgentRunsRepo.ts`
    - `tryStartGovAgentRun(messageId)`
    - `completeGovAgentRun(messageId, { resourceCount, matchCount })`
@@ -1308,7 +1308,7 @@ channel_replies where matchKey == "rid-design-intern-002:msg-channel-xiaoya-001"
 channel update
   -> backend wakes Gov Agent session
   -> Claude decides whether to call read_channel
-  -> Claude decides whether to call query_resource_pdf
+  -> Claude decides whether to call query_resource_document
   -> Claude evaluates eligibility and fit
   -> if no response: final answer null
   -> if response: Claude calls write_channel_reply
@@ -1360,7 +1360,7 @@ Skill 名稱盡量沿用 Agent 語意，不要用資料庫語意：
 ```txt
 Good:
 - read_channel
-- query_resource_pdf
+- query_resource_document
 - write_channel_reply
 - expose_to_match_inbox
 - escalate_to_caseworker
@@ -1551,7 +1551,7 @@ Gov Agent 不直接負責通知使用者；它只負責產生可被 Match Inbox 
 - 有 `fakeChannelMessages`
 - 有 `fakeGovernmentResources`
 - 有 `skills/read_channel/SKILL.md`
-- 有 `skills/query_resource_pdf/SKILL.md`
+- 有 `skills/query_resource_document/SKILL.md`
 - 有 `skills/write_channel_reply/SKILL.md`
 - 有對應的 `toolWrappers/`
 - 有 `initGovManagedAgentSession`
@@ -1587,7 +1587,7 @@ Gov Agent 不直接負責通知使用者；它只負責產生可被 Match Inbox 
 4. 建 `services/api/src/agent/gov/skills/*/SKILL.md`
 5. 建 `services/api/src/agent/gov/toolWrappers/`
 6. 寫 `read_channel` Markdown Skill + `readChannelToolWrapper`
-7. 寫 `query_resource_pdf` Markdown Skill + `queryResourcePdfToolWrapper`
+7. 寫 `query_resource_document` Markdown Skill + `queryResourcePdfToolWrapper`
 8. 寫 `write_channel_reply` Markdown Skill + `writeChannelReplyToolWrapper`，輸出 `ChannelReply`
 9. 寫 `initGovManagedAgentSession`
 10. 寫 `evaluateMatchWithClaude`

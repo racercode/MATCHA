@@ -1,0 +1,13 @@
+{
+  "rid": "rid-youth-startup-loan",
+  "agencyId": "taipei-youth-dept",
+  "agencyName": "臺北市政府青年局",
+  "name": "臺北市青年創業融資貸款",
+  "description": "提供青年創業者融資貸款，協助取得創業初期所需資金，降低創業門檻。",
+  "eligibilityCriteria": [
+    "年滿二十歲至未滿四十六歲之中華民國國民",
+    "於臺北市設立營利事業登記",
+    "符合臺北市青年創業融資貸款實施要點相關規定"
+  ],
+  "contactUrl": "https://youth.gov.taipei"
+}

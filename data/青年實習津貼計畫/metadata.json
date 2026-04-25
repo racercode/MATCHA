@@ -1,0 +1,12 @@
+{
+  "rid": "rid-youth-intern-subsidy",
+  "agencyId": "taipei-youth-dept",
+  "agencyName": "臺北市政府青年局",
+  "name": "臺北市政府青年局青年實習津貼計畫",
+  "description": "補助青年實習期間之津貼，鼓勵青年透過實習累積職場經驗，促進就業銜接。",
+  "eligibilityCriteria": [
+    "設籍或就讀臺北市之青年",
+    "符合青年實習津貼計畫申請資格"
+  ],
+  "contactUrl": "https://youth.gov.taipei"
+}
