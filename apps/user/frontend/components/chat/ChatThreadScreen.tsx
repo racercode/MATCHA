@@ -125,6 +125,23 @@ const toCachedPromptCard = (card: SwipeCard): CachedPromptCard => ({
   rightValue: card.rightValue,
 });
 
+const hasPendingReplyAlreadyCompleted = (
+  items: { from: string; text: string; createdAt: Timestamp }[],
+  pending: { text: string; createdAt: Timestamp }[],
+) => {
+  if (pending.length === 0 || items.length === 0) return false;
+
+  return pending.some((pendingMessage) => {
+    const matchedHumanIndex = items.findIndex(
+      (item) => item.from.startsWith('human:') && item.text === pendingMessage.text,
+    );
+
+    if (matchedHumanIndex < 0) return false;
+
+    return items.slice(matchedHumanIndex + 1).some((item) => !item.from.startsWith('human:'));
+  });
+};
+
 function PostPreviewCard({ content }: { content: PostPreviewContent }) {
   return (
     <View style={styles.previewCard}>
@@ -324,6 +341,7 @@ export default function ChatThreadScreen() {
           const items: { mid: string; from: string; text: string; createdAt: Timestamp }[] =
             Array.isArray(json.data?.items) ? json.data.items : [];
           if (items.length > 0) {
+            const shouldClearPending = hasPendingReplyAlreadyCompleted(items, pending);
             const mapped = items.map((item) => ({
               mid: item.mid,
               tid: personaThreadId,
@@ -343,7 +361,13 @@ export default function ChatThreadScreen() {
                 createdAt: item.createdAt,
               })),
             );
-            if (pending.length === 0) {
+            if (shouldClearPending) {
+              setIsAwaitingPersonaReply(false);
+              setStreamingText(null);
+              streamBufferRef.current = '';
+              await clearPendingPersonaMessages(currentUserId);
+              await clearCachedStreamingPersonaReply(currentUserId);
+            } else if (pending.length === 0) {
               await clearCachedStreamingPersonaReply(currentUserId);
             }
           } else if (cached.length === 0) {
@@ -424,12 +448,23 @@ export default function ChatThreadScreen() {
         if (mode !== 'persona') return;
 
         const pending = await readPendingPersonaMessages(currentUserId);
-        if (pending.length === 0) return;
+        if (pending.length > 0) {
+          const cachedMessages = await readCachedPersonaMessages(currentUserId);
+          const shouldClearPending = hasPendingReplyAlreadyCompleted(cachedMessages, pending);
 
-        for (const message of pending) {
-          if (ws.readyState !== WebSocket.OPEN) return;
-          const event: ClientEvent = { type: 'persona_message', content: message.text };
-          ws.send(JSON.stringify(event));
+          if (shouldClearPending) {
+            setIsAwaitingPersonaReply(false);
+            setStreamingText(null);
+            streamBufferRef.current = '';
+            await clearPendingPersonaMessages(currentUserId);
+            await clearCachedStreamingPersonaReply(currentUserId);
+          } else {
+            for (const message of pending) {
+              if (ws.readyState !== WebSocket.OPEN) return;
+              const event: ClientEvent = { type: 'persona_message', content: message.text };
+              ws.send(JSON.stringify(event));
+            }
+          }
         }
 
         const cachedCardState = await readCachedPersonaCardState(currentUserId);

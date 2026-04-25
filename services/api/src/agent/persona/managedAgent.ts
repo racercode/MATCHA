@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const PERSONA_AGENT_MODEL = 'claude-haiku-4-5'
-const PERSONA_AGENT_CONFIG_VERSION = 'persona-v1'
+const PERSONA_AGENT_CONFIG_VERSION = 'persona-v2'
 // Single shared agent record; per-user sessions stored as session entries keyed by uid
 const PERSONA_AGENT_UID = 'persona-agent-shared'
 
@@ -41,6 +41,7 @@ const PERSONA_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Persona Agent，負責與
 - 每輪對話最多問一個問題。
 - 如果使用者傳來 [swipe:{cardId}:{direction}] 格式，表示他們完成了刷卡選擇，請確認並繼續。
 - 在你了解足夠資訊後，主動建議發布到媒合頻道。
+- 回覆時嚴禁使用 Markdown 語法（禁止 **粗體**、*斜體*、# 標題、- 列表、--- 分隔線等），請使用純文字。
 
 開場白：如果這是新使用者（persona 是空的），先自我介紹，然後詢問使用者目前遇到的主要挑戰或目標。`
 
