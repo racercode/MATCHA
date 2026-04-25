@@ -236,10 +236,17 @@ router.get('/me/peer-threads', async (req, res) => {
   const peerUids = [...new Set(threads.map(t => (t.userAId === uid ? t.userBId : t.userAId)))]
   const peerPersonas = new Map<string, { displayName: string; summary: string }>()
   await Promise.all(peerUids.map(async peerUid => {
-    const doc = await db.collection('personas').doc(peerUid).get()
-    if (doc.exists) {
-      peerPersonas.set(peerUid, { displayName: doc.data()!.displayName as string, summary: doc.data()!.summary as string })
-    }
+    const [personaDoc, profileDoc] = await Promise.all([
+      db.collection('personas').doc(peerUid).get(),
+      db.collection('userProfiles').doc(peerUid).get(),
+    ])
+    const personaName = personaDoc.exists ? (personaDoc.data()!.displayName as string | undefined) : undefined
+    const profileName = profileDoc.exists ? (profileDoc.data()!.name as string | undefined) : undefined
+    const authUser = await auth.getUser(peerUid).catch(() => null)
+    const emailPrefix = authUser?.email?.split('@')[0]
+    const displayName = profileName || authUser?.displayName || (personaName && personaName !== peerUid ? personaName : undefined) || emailPrefix || peerUid.slice(0, 8)
+    const summary = personaDoc.exists ? (personaDoc.data()!.summary as string) : ''
+    peerPersonas.set(peerUid, { displayName, summary })
   }))
 
   const items = threads.map(t => {
@@ -248,7 +255,7 @@ router.get('/me/peer-threads', async (req, res) => {
     return {
       tid: t.tid,
       type: t.type,
-      peer: { uid: peerUid, displayName: peer?.displayName ?? peerUid, summary: peer?.summary ?? '' },
+      peer: { uid: peerUid, displayName: peer?.displayName ?? peerUid.slice(0, 8), summary: peer?.summary ?? '' },
       matchRationale: t.matchRationale,
       status: t.status,
       createdAt: t.createdAt,

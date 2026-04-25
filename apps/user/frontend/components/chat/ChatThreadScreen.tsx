@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -685,7 +685,7 @@ export default function ChatThreadScreen() {
         previousMessage == null ||
         toMs(item.createdAt) - toMs(previousMessage.createdAt) > 1000 * 60 * 8;
       const isOwnMessage =
-        mode === 'peer' ? item.from === `user:${currentUserId}` : item.from === `human:${currentUserId}`;
+        mode === 'peer' ? item.from === `agent:${currentUserId}` : item.from === `human:${currentUserId}`;
 
       return (
         <View style={styles.messageBlock}>
@@ -758,18 +758,13 @@ export default function ChatThreadScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <Stack.Screen options={{ title: mode === 'peer' ? (peerName ?? '對話紀錄') : 'Chat', headerBackTitle: 'Back' }} />
       <ThemedView style={styles.container}>
         <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
         >
-          {mode === 'peer' ? (
-            <View style={styles.threadHeader}>
-              <ThemedText style={styles.threadEyebrow}>Coffee Chat</ThemedText>
-              <ThemedText style={styles.threadTitle}>{peerName ?? '對話紀錄'}</ThemedText>
-            </View>
-          ) : null}
           <View style={styles.messagesArea}>
             <FlatList
               ref={listRef}
@@ -806,23 +801,29 @@ export default function ChatThreadScreen() {
             ) : null}
           </View>
 
-          <View style={styles.composerBar}>
-            <View style={styles.composerInner}>
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                placeholder="Message..."
-                placeholderTextColor="#A1A1AA"
-                style={styles.input}
-                returnKeyType="send"
-                onSubmitEditing={handleSend}
-                onFocus={() => scrollToBottom()}
-              />
-              <Pressable style={[styles.sendButton, draft.trim() ? styles.sendButtonActive : undefined]} onPress={handleSend}>
-                <Ionicons name="arrow-up" size={18} color="#FFFFFF" />
-              </Pressable>
+          {mode === 'peer' ? (
+            <View style={styles.peerReadOnlyBar}>
+              <ThemedText style={styles.peerReadOnlyText}>這是 Agent 代你進行的對話，僅供閱讀</ThemedText>
             </View>
-          </View>
+          ) : (
+            <View style={styles.composerBar}>
+              <View style={styles.composerInner}>
+                <TextInput
+                  value={draft}
+                  onChangeText={setDraft}
+                  placeholder="Message..."
+                  placeholderTextColor="#A1A1AA"
+                  style={styles.input}
+                  returnKeyType="send"
+                  onSubmitEditing={handleSend}
+                  onFocus={() => scrollToBottom()}
+                />
+                <Pressable style={[styles.sendButton, draft.trim() ? styles.sendButtonActive : undefined]} onPress={handleSend}>
+                  <Ionicons name="arrow-up" size={18} color="#FFFFFF" />
+                </Pressable>
+              </View>
+            </View>
+          )}
         </KeyboardAvoidingView>
       </ThemedView>
     </SafeAreaView>
@@ -833,25 +834,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   flex: { flex: 1 },
-  threadHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 4,
-    gap: 2,
-    backgroundColor: '#FFFFFF',
-  },
-  threadEyebrow: {
-    fontSize: 12,
-    lineHeight: 16,
-    color: '#65A1FB',
-    fontWeight: '700',
-  },
-  threadTitle: {
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '700',
-    color: '#1F2937',
-  },
   messagesArea: {
     flex: 1,
     position: 'relative',
@@ -943,5 +925,15 @@ const styles = StyleSheet.create({
   },
   sendButtonActive: {
     backgroundColor: '#2F6FD6',
+  },
+  peerReadOnlyBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+  },
+  peerReadOnlyText: {
+    fontSize: 13,
+    color: '#9CA3AF',
   },
 });

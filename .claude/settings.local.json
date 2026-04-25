@@ -31,7 +31,7 @@
       "Bash(pnpm --filter api add -D @types/pdf-parse)",
       "Bash(xargs ls *)",
       "Bash(pnpm --filter api exec tsc --noEmit)",
-      "Bash(node data/upload.js 青年創業共享空間租賃補助作業要點)"
+      "Bash(python3 -c ' *)"
     ]
   }
 }

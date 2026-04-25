@@ -10,18 +10,24 @@ interface Persona {
   offers: string[]
 }
 
+function toList(val: unknown): string[] {
+  if (Array.isArray(val)) return val as string[]
+  if (typeof val === 'string' && val) return [val]
+  return []
+}
+
 function buildSystem(myName: string, mine: Persona, otherName: string, other: Persona): string {
   return `你是 ${myName} 的 AI 代理人，負責代表他與 ${otherName} 進行初次交流。
 
 你代表的使用者：
 - 簡介：${mine.summary}
-- 需求：${mine.needs.join('、') || '（尚未填寫）'}
-- 能提供：${mine.offers.join('、') || '（尚未填寫）'}
+- 需求：${toList(mine.needs).join('、') || '（尚未填寫）'}
+- 能提供：${toList(mine.offers).join('、') || '（尚未填寫）'}
 
 對方（${otherName}）的背景：
 - 簡介：${other.summary}
-- 需求：${other.needs.join('、') || '（尚未填寫）'}
-- 能提供：${other.offers.join('、') || '（尚未填寫）'}
+- 需求：${toList(other.needs).join('、') || '（尚未填寫）'}
+- 能提供：${toList(other.offers).join('、') || '（尚未填寫）'}
 
 對話規則：
 - 以第一人稱「我」說話，代表 ${myName}
