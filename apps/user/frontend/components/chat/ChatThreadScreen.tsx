@@ -2,10 +2,13 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   StyleSheet,
@@ -15,16 +18,20 @@ import {
 import type { ClientEvent, PeerMessage, ServerEvent, SwipeCard, Timestamp } from '@matcha/shared-types';
 import { msToTimestamp, toMs } from '@matcha/shared-types';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Loading from '@/components/Loading';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/containers/hooks/useAuth';
 import { auth } from '@/lib/firebase';
 import { API_BASE_URL, WS_URL } from '@/lib/api';
 import {
+  clearCachedStreamingPersonaReply,
   clearPendingPersonaMessages,
   enqueuePendingPersonaMessage,
   readCachedPersonaMessages,
+  readCachedStreamingPersonaReply,
   readPendingPersonaMessages,
+  writeCachedStreamingPersonaReply,
   writeCachedPersonaMessages,
 } from '@/lib/personaChatCache';
 import {
@@ -69,6 +76,9 @@ type TextContent = { text: string };
 const PERSONA_AGENT_ID = 'gov:persona-agent-01';
 const AGENT_AVATAR = require('@/assets/icons/wife.jpg');
 const CARD_PREFETCH_MESSAGE = 'generate_swipe_card';
+const INITIAL_MESSAGE_BATCH = 30;
+const OLDER_MESSAGE_BATCH = 20;
+const LOAD_OLDER_THRESHOLD = 80;
 
 export const getPersonaThreadId = (uid: string) => `thread-persona-chat-${uid}`;
 
@@ -116,6 +126,23 @@ const toCachedPromptCard = (card: SwipeCard): CachedPromptCard => ({
   rightValue: card.rightValue,
 });
 
+const hasPendingReplyAlreadyCompleted = (
+  items: { from: string; text: string; createdAt: Timestamp }[],
+  pending: { text: string; createdAt: Timestamp }[],
+) => {
+  if (pending.length === 0 || items.length === 0) return false;
+
+  return pending.some((pendingMessage) => {
+    const matchedHumanIndex = items.findIndex(
+      (item) => item.from.startsWith('human:') && item.text === pendingMessage.text,
+    );
+
+    if (matchedHumanIndex < 0) return false;
+
+    return items.slice(matchedHumanIndex + 1).some((item) => !item.from.startsWith('human:'));
+  });
+};
+
 function PostPreviewCard({ content }: { content: PostPreviewContent }) {
   return (
     <View style={styles.previewCard}>
@@ -151,7 +178,7 @@ function PostPreviewCard({ content }: { content: PostPreviewContent }) {
   );
 }
 
-function TypingBubble({ text }: { text: string }) {
+const TypingBubble = memo(function TypingBubble({ text }: { text: string }) {
   return (
     <View style={[styles.messageRow, styles.messageRowOther]}>
       <Image source={AGENT_AVATAR} style={styles.avatar} contentFit="cover" />
@@ -160,9 +187,15 @@ function TypingBubble({ text }: { text: string }) {
       </View>
     </View>
   );
-}
+});
 
-function PersonaMessageBubble({ message, isOwnMessage }: { message: PersonaMessage; isOwnMessage: boolean }) {
+const PersonaMessageBubble = memo(function PersonaMessageBubble({
+  message,
+  isOwnMessage,
+}: {
+  message: PersonaMessage;
+  isOwnMessage: boolean;
+}) {
   const content = message.content;
 
   if (isPostPreview(content)) {
@@ -186,9 +219,15 @@ function PersonaMessageBubble({ message, isOwnMessage }: { message: PersonaMessa
       </View>
     </View>
   );
-}
+});
 
-function PeerMessageBubble({ message, isOwnMessage }: { message: PeerThreadMessage; isOwnMessage: boolean }) {
+const PeerMessageBubble = memo(function PeerMessageBubble({
+  message,
+  isOwnMessage,
+}: {
+  message: PeerThreadMessage;
+  isOwnMessage: boolean;
+}) {
   return (
     <View style={[styles.messageRow, isOwnMessage ? styles.messageRowOwn : styles.messageRowOther]}>
       {!isOwnMessage ? <Image source={AGENT_AVATAR} style={styles.avatar} contentFit="cover" /> : null}
@@ -197,7 +236,7 @@ function PeerMessageBubble({ message, isOwnMessage }: { message: PeerThreadMessa
       </View>
     </View>
   );
-}
+});
 
 const buildAuthedHeaders = async (): Promise<Record<string, string>> => {
   const token = await auth.currentUser?.getIdToken();
@@ -217,11 +256,18 @@ export default function ChatThreadScreen() {
   const [personaMessages, setPersonaMessages] = useState<PersonaMessage[]>([]);
   const [peerMessages, setPeerMessages] = useState<PeerThreadMessage[]>([]);
   const [streamingText, setStreamingText] = useState<string | null>(null);
+  const [isAwaitingPersonaReply, setIsAwaitingPersonaReply] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
+  const [hasMorePeerHistory, setHasMorePeerHistory] = useState(false);
   const [peerHistoryError, setPeerHistoryError] = useState<string | null>(null);
+  const [visiblePersonaCount, setVisiblePersonaCount] = useState(INITIAL_MESSAGE_BATCH);
+  const [visiblePeerCount, setVisiblePeerCount] = useState(INITIAL_MESSAGE_BATCH);
   const listRef = useRef<FlatList<PersonaMessage | PeerThreadMessage>>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const streamBufferRef = useRef('');
+  const scrollFrameRef = useRef<number | null>(null);
+  const isLoadingOlderRef = useRef(false);
   const cardPrefetchCountRef = useRef(0);
   const cardPrefetchPendingRef = useRef(false);
 
@@ -233,14 +279,20 @@ export default function ChatThreadScreen() {
     params.kind === 'peer' || (routeTid != null && routeTid !== personaThreadId) ? 'peer' : 'persona';
   const activeThreadId = mode === 'peer' ? routeTid ?? '' : personaThreadId;
 
-  const visibleMessages = useMemo(
-    () => (mode === 'peer' ? peerMessages : personaMessages),
-    [mode, peerMessages, personaMessages],
-  );
+  const visibleMessages = useMemo(() => {
+    if (mode === 'peer') {
+      return peerMessages.slice(-visiblePeerCount);
+    }
+    return personaMessages.slice(-visiblePersonaCount);
+  }, [mode, peerMessages, personaMessages, visiblePeerCount, visiblePersonaCount]);
 
   const scrollToBottom = (animated = true) => {
-    requestAnimationFrame(() => {
+    if (scrollFrameRef.current != null) {
+      cancelAnimationFrame(scrollFrameRef.current);
+    }
+    scrollFrameRef.current = requestAnimationFrame(() => {
       listRef.current?.scrollToEnd({ animated });
+      scrollFrameRef.current = null;
     });
   };
 
@@ -256,9 +308,12 @@ export default function ChatThreadScreen() {
     if (mode === 'persona') {
       let isMounted = true;
       setIsLoadingHistory(true);
+      setVisiblePersonaCount(INITIAL_MESSAGE_BATCH);
       (async () => {
         try {
           const cached = await readCachedPersonaMessages(currentUserId);
+          const pending = await readPendingPersonaMessages(currentUserId);
+          const cachedStreamingReply = await readCachedStreamingPersonaReply(currentUserId);
           if (isMounted && cached.length > 0) {
             setPersonaMessages(
               cached.map((item) => ({
@@ -271,6 +326,11 @@ export default function ChatThreadScreen() {
               })),
             );
           }
+          if (isMounted) {
+            setIsAwaitingPersonaReply(pending.length > 0);
+            setStreamingText(pending.length > 0 ? cachedStreamingReply?.text ?? null : null);
+            streamBufferRef.current = pending.length > 0 ? cachedStreamingReply?.text ?? '' : '';
+          }
 
           const headers = await buildAuthedHeaders();
           const res = await fetch(`${API_BASE_URL}/me/persona-messages`, { headers });
@@ -282,6 +342,7 @@ export default function ChatThreadScreen() {
           const items: { mid: string; from: string; text: string; createdAt: Timestamp }[] =
             Array.isArray(json.data?.items) ? json.data.items : [];
           if (items.length > 0) {
+            const shouldClearPending = hasPendingReplyAlreadyCompleted(items, pending);
             const mapped = items.map((item) => ({
               mid: item.mid,
               tid: personaThreadId,
@@ -291,6 +352,7 @@ export default function ChatThreadScreen() {
               createdAt: item.createdAt,
             }));
             setPersonaMessages(mapped);
+            setVisiblePersonaCount((prev) => Math.max(prev, Math.min(INITIAL_MESSAGE_BATCH, mapped.length)));
             await writeCachedPersonaMessages(
               currentUserId,
               items.map((item) => ({
@@ -300,14 +362,25 @@ export default function ChatThreadScreen() {
                 createdAt: item.createdAt,
               })),
             );
+            if (shouldClearPending) {
+              setIsAwaitingPersonaReply(false);
+              setStreamingText(null);
+              streamBufferRef.current = '';
+              await clearPendingPersonaMessages(currentUserId);
+              await clearCachedStreamingPersonaReply(currentUserId);
+            } else if (pending.length === 0) {
+              await clearCachedStreamingPersonaReply(currentUserId);
+            }
           } else if (cached.length === 0) {
             setPersonaMessages(buildSeedMessages(personaThreadId, currentUserId));
+            setVisiblePersonaCount(INITIAL_MESSAGE_BATCH);
           }
         } catch {
           if (isMounted) {
             const cached = await readCachedPersonaMessages(currentUserId);
             if (cached.length === 0) {
               setPersonaMessages(buildSeedMessages(personaThreadId, currentUserId));
+              setVisiblePersonaCount(INITIAL_MESSAGE_BATCH);
             }
           }
         } finally {
@@ -321,15 +394,20 @@ export default function ChatThreadScreen() {
       let isMounted = true;
       setIsLoadingHistory(true);
       setPeerHistoryError(null);
+      setVisiblePeerCount(INITIAL_MESSAGE_BATCH);
       (async () => {
         try {
           const headers = await buildAuthedHeaders();
-          const res = await fetch(`${API_BASE_URL}/peer-threads/${activeThreadId}/messages`, { headers });
+          const res = await fetch(
+            `${API_BASE_URL}/peer-threads/${activeThreadId}/messages?limit=${INITIAL_MESSAGE_BATCH}`,
+            { headers },
+          );
           const json = await res.json();
           if (!isMounted) return;
           if (!res.ok || !json.success) throw new Error(json.error ?? '讀取對話失敗');
           const items = Array.isArray(json.data?.items) ? (json.data.items as PeerMessage[]) : [];
           setPeerMessages(items.map((message) => ({ ...message, tid: activeThreadId })));
+          setHasMorePeerHistory(Boolean(json.data?.hasMore));
         } catch (error) {
           if (!isMounted) return;
           setPeerHistoryError(error instanceof Error ? error.message : '讀取對話失敗');
@@ -371,15 +449,24 @@ export default function ChatThreadScreen() {
         if (mode !== 'persona') return;
 
         const pending = await readPendingPersonaMessages(currentUserId);
-        if (pending.length === 0) return;
+        if (pending.length > 0) {
+          const cachedMessages = await readCachedPersonaMessages(currentUserId);
+          const shouldClearPending = hasPendingReplyAlreadyCompleted(cachedMessages, pending);
 
-        for (const message of pending) {
-          if (ws.readyState !== WebSocket.OPEN) return;
-          const event: ClientEvent = { type: 'persona_message', content: message.text };
-          ws.send(JSON.stringify(event));
+          if (shouldClearPending) {
+            setIsAwaitingPersonaReply(false);
+            setStreamingText(null);
+            streamBufferRef.current = '';
+            await clearPendingPersonaMessages(currentUserId);
+            await clearCachedStreamingPersonaReply(currentUserId);
+          } else {
+            for (const message of pending) {
+              if (ws.readyState !== WebSocket.OPEN) return;
+              const event: ClientEvent = { type: 'persona_message', content: message.text };
+              ws.send(JSON.stringify(event));
+            }
+          }
         }
-
-        await clearPendingPersonaMessages(currentUserId);
 
         const cachedCardState = await readCachedPersonaCardState(currentUserId);
         const hasCachedCards =
@@ -402,9 +489,13 @@ export default function ChatThreadScreen() {
 
           if (mode === 'persona' && data.type === 'agent_reply') {
             if (!data.done) {
+              setIsAwaitingPersonaReply(false);
               streamBufferRef.current += data.content;
               setStreamingText(streamBufferRef.current);
-              scrollToBottom();
+              void writeCachedStreamingPersonaReply(currentUserId, {
+                text: streamBufferRef.current,
+                createdAt: msToTimestamp(Date.now()),
+              });
             } else {
               if (cardPrefetchPendingRef.current && cardPrefetchCountRef.current > 0) {
                 void (async () => {
@@ -423,6 +514,9 @@ export default function ChatThreadScreen() {
               const finalText = streamBufferRef.current + (data.content ?? '');
               streamBufferRef.current = '';
               setStreamingText(null);
+              setIsAwaitingPersonaReply(false);
+              void clearCachedStreamingPersonaReply(currentUserId);
+              void clearPendingPersonaMessages(currentUserId);
 
               if (finalText.trim()) {
                 setPersonaMessages((prev) => [
@@ -437,7 +531,6 @@ export default function ChatThreadScreen() {
                   },
                 ]);
               }
-              scrollToBottom();
             }
           }
 
@@ -465,6 +558,18 @@ export default function ChatThreadScreen() {
             });
             scrollToBottom();
           }
+
+          if (data.type === 'match_notify') {
+            const peerName = (data as any).peer?.displayName ?? '有人';
+            Alert.alert(
+              '新配對！',
+              `Agent 幫你配對了 ${peerName}，快去 Coffee Chat 看看！`,
+              [
+                { text: '稍後再說', style: 'cancel' },
+                { text: '前往查看', onPress: () => router.push('/(tabs)/cafe-chat') },
+              ],
+            );
+          }
         } catch {
           // ignore malformed events
         }
@@ -483,10 +588,120 @@ export default function ChatThreadScreen() {
 
     return () => {
       isActive = false;
+      if (scrollFrameRef.current != null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
       wsRef.current?.close();
       wsRef.current = null;
     };
   }, [activeThreadId, currentUserId, mode, personaThreadId]);
+
+  useEffect(() => {
+    if (isLoadingHistory) return;
+    scrollToBottom(false);
+  }, [isLoadingHistory, visibleMessages.length]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (isLoadingOlderRef.current || isLoadingHistory) return;
+
+    if (mode === 'persona') {
+      if (visiblePersonaCount >= personaMessages.length) return;
+      isLoadingOlderRef.current = true;
+      setIsLoadingOlderMessages(true);
+      setVisiblePersonaCount((prev) => Math.min(prev + OLDER_MESSAGE_BATCH, personaMessages.length));
+      setIsLoadingOlderMessages(false);
+      isLoadingOlderRef.current = false;
+      return;
+    }
+
+    if (mode !== 'peer' || !activeThreadId) return;
+
+    if (visiblePeerCount < peerMessages.length) {
+      isLoadingOlderRef.current = true;
+      setIsLoadingOlderMessages(true);
+      setVisiblePeerCount((prev) => Math.min(prev + OLDER_MESSAGE_BATCH, peerMessages.length));
+      setIsLoadingOlderMessages(false);
+      isLoadingOlderRef.current = false;
+      return;
+    }
+
+    if (!hasMorePeerHistory || peerMessages.length === 0) return;
+
+    const oldestMessage = peerMessages[0];
+    const before = toMs(oldestMessage.createdAt);
+    isLoadingOlderRef.current = true;
+    setIsLoadingOlderMessages(true);
+
+    try {
+      const headers = await buildAuthedHeaders();
+      const res = await fetch(
+        `${API_BASE_URL}/peer-threads/${activeThreadId}/messages?before=${before}&limit=${OLDER_MESSAGE_BATCH}`,
+        { headers },
+      );
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error ?? '讀取更多對話失敗');
+
+      const items = Array.isArray(json.data?.items) ? (json.data.items as PeerMessage[]) : [];
+      const olderMessages = items.map((message) => ({ ...message, tid: activeThreadId }));
+
+      setPeerMessages((prev) => {
+        const existingIds = new Set(prev.map((message) => message.mid));
+        const mergedOlder = olderMessages.filter((message) => !existingIds.has(message.mid));
+        return [...mergedOlder, ...prev];
+      });
+      setVisiblePeerCount((prev) => prev + olderMessages.length);
+      setHasMorePeerHistory(Boolean(json.data?.hasMore));
+    } catch (error) {
+      console.warn('[Chat] load older messages failed', error);
+    } finally {
+      setIsLoadingOlderMessages(false);
+      isLoadingOlderRef.current = false;
+    }
+  }, [
+    activeThreadId,
+    hasMorePeerHistory,
+    isLoadingHistory,
+    mode,
+    peerMessages,
+    personaMessages.length,
+    visiblePeerCount,
+    visiblePersonaCount,
+  ]);
+
+  const handleListScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (event.nativeEvent.contentOffset.y <= LOAD_OLDER_THRESHOLD) {
+        void loadOlderMessages();
+      }
+    },
+    [loadOlderMessages],
+  );
+
+  const renderMessage = useCallback(
+    ({ item, index }: { item: PersonaMessage | PeerThreadMessage; index: number }) => {
+      const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
+      const showTimestamp =
+        previousMessage == null ||
+        toMs(item.createdAt) - toMs(previousMessage.createdAt) > 1000 * 60 * 8;
+      const isOwnMessage =
+        mode === 'peer' ? item.from === `user:${currentUserId}` : item.from === `human:${currentUserId}`;
+
+      return (
+        <View style={styles.messageBlock}>
+          {showTimestamp ? (
+            <ThemedText style={styles.timestamp}>{formatTimeLabel(item.createdAt)}</ThemedText>
+          ) : null}
+          {mode === 'peer' ? (
+            <PeerMessageBubble message={item as PeerThreadMessage} isOwnMessage={isOwnMessage} />
+          ) : (
+            <PersonaMessageBubble message={item as PersonaMessage} isOwnMessage={isOwnMessage} />
+          )}
+        </View>
+      );
+    },
+    [currentUserId, mode, visibleMessages],
+  );
 
   const handleSend = () => {
     const content = draft.trim();
@@ -495,6 +710,16 @@ export default function ChatThreadScreen() {
     setDraft('');
 
     if (mode === 'persona') {
+      setIsAwaitingPersonaReply(true);
+      void enqueuePendingPersonaMessage(currentUserId, {
+        mid: `pending-${Date.now()}`,
+        text: content,
+        createdAt: msToTimestamp(Date.now()),
+      });
+      void clearCachedStreamingPersonaReply(currentUserId);
+      streamBufferRef.current = '';
+      setStreamingText(null);
+
       setPersonaMessages((prev) => [
         ...prev,
         {
@@ -510,12 +735,6 @@ export default function ChatThreadScreen() {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         const event: ClientEvent = { type: 'persona_message', content };
         wsRef.current.send(JSON.stringify(event));
-      } else {
-        void enqueuePendingPersonaMessage(currentUserId, {
-          mid: `pending-${Date.now()}`,
-          text: content,
-          createdAt: msToTimestamp(Date.now()),
-        });
       }
     } else {
       const localMessage: PeerThreadMessage = {
@@ -551,47 +770,41 @@ export default function ChatThreadScreen() {
               <ThemedText style={styles.threadTitle}>{peerName ?? '對話紀錄'}</ThemedText>
             </View>
           ) : null}
+          <View style={styles.messagesArea}>
+            <FlatList
+              ref={listRef}
+              data={visibleMessages}
+              keyExtractor={(item) => item.mid}
+              contentContainerStyle={styles.messagesContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+              renderItem={renderMessage}
+              onScroll={handleListScroll}
+              scrollEventThrottle={16}
+              initialNumToRender={12}
+              maxToRenderPerBatch={8}
+              windowSize={7}
+              removeClippedSubviews={Platform.OS === 'android'}
+              ListHeaderComponent={
+                isLoadingHistory ? (
+                  <ThemedText style={styles.statusText}>載入對話中…</ThemedText>
+                ) : isLoadingOlderMessages ? (
+                  <ThemedText style={styles.statusText}>載入更早的對話…</ThemedText>
+                ) : peerHistoryError ? (
+                  <ThemedText style={styles.errorText}>{peerHistoryError}</ThemedText>
+                ) : null
+              }
+              ListFooterComponent={mode === 'persona' && streamingText !== null ? <TypingBubble text={streamingText} /> : null}
+            />
 
-          <FlatList
-            ref={listRef}
-            data={visibleMessages}
-            keyExtractor={(item) => item.mid}
-            contentContainerStyle={styles.messagesContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
-            onContentSizeChange={() => scrollToBottom(false)}
-            renderItem={({ item, index }) => {
-              const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
-              const showTimestamp =
-                previousMessage == null ||
-                toMs(item.createdAt) - toMs(previousMessage.createdAt) > 1000 * 60 * 8;
-              const isOwnMessage =
-                mode === 'peer' ? item.from === `user:${currentUserId}` : item.from === `human:${currentUserId}`;
-
-              return (
-                <View style={styles.messageBlock}>
-                  {showTimestamp ? (
-                    <ThemedText style={styles.timestamp}>{formatTimeLabel(item.createdAt)}</ThemedText>
-                  ) : null}
-                  {mode === 'peer' ? (
-                    <PeerMessageBubble message={item as PeerThreadMessage} isOwnMessage={isOwnMessage} />
-                  ) : (
-                    <PersonaMessageBubble message={item as PersonaMessage} isOwnMessage={isOwnMessage} />
-                  )}
-                </View>
-              );
-            }}
-            ListHeaderComponent={
-              isLoadingHistory ? (
-                <ThemedText style={styles.statusText}>載入對話中…</ThemedText>
-              ) : peerHistoryError ? (
-                <ThemedText style={styles.errorText}>{peerHistoryError}</ThemedText>
-              ) : null
-            }
-            ListFooterComponent={mode === 'persona' && streamingText !== null ? <TypingBubble text={streamingText} /> : null}
-          />
+            {mode === 'persona' && isAwaitingPersonaReply && streamingText === null && !isLoadingHistory ? (
+              <View pointerEvents="none" style={styles.chatLoadingOverlay}>
+                <Loading text="AI 正在生成回覆…" contentStyle={styles.chatLoadingContent} />
+              </View>
+            ) : null}
+          </View>
 
           <View style={styles.composerBar}>
             <View style={styles.composerInner}>
@@ -639,7 +852,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1F2937',
   },
+  messagesArea: {
+    flex: 1,
+    position: 'relative',
+  },
   messagesContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24, gap: 8 },
+  chatLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  chatLoadingContent: {
+    transform: [{ translateY: 0 }],
+  },
   messageBlock: { gap: 10 },
   timestamp: {
     alignSelf: 'center',

@@ -68,5 +68,11 @@ export async function proposePeerMatchToolWrapper(input: ProposePeerMatchInput):
   broadcast(userBId, { type: 'peer_message', message: midObj })
 
   console.log(`[Coffee Agent] Peer match created: ${tid} (${userAId} ↔ ${userBId})`)
+
+  // Fire-and-forget: run agent-to-agent intro conversation
+  import('../peerIntroAgent.js')
+    .then(({ runPeerAgentIntro }) => runPeerAgentIntro(tid, userAId, userBId))
+    .catch(err => console.error('[Coffee Agent] peerIntroAgent error:', err))
+
   return { threadId: tid, created: true }
 }

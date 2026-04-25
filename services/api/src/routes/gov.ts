@@ -160,7 +160,7 @@ router.post('/gov/agent/run-message', async (req, res) => {
   }
 })
 
-router.use(verifyToken, requireGovStaff)
+router.use('/gov', verifyToken, requireGovStaff)
 
 function serializeGovChannelReply(reply: FirestoreChannelReply, citizenUid = '') {
   return {

@@ -14,8 +14,14 @@ export type PendingPersonaMessage = {
   createdAt: Timestamp;
 };
 
+export type CachedStreamingPersonaReply = {
+  text: string;
+  createdAt: Timestamp;
+};
+
 const personaCacheKey = (uid: string) => `persona-chat-cache:${uid}`;
 const pendingQueueKey = (uid: string) => `persona-chat-pending:${uid}`;
+const streamingReplyKey = (uid: string) => `persona-chat-streaming:${uid}`;
 
 const safeParse = <T>(raw: string | null): T | null => {
   if (!raw) return null;
@@ -47,4 +53,19 @@ export async function enqueuePendingPersonaMessage(uid: string, message: Pending
 
 export async function clearPendingPersonaMessages(uid: string): Promise<void> {
   await AsyncStorage.removeItem(pendingQueueKey(uid));
+}
+
+export async function readCachedStreamingPersonaReply(uid: string): Promise<CachedStreamingPersonaReply | null> {
+  return safeParse<CachedStreamingPersonaReply>(await AsyncStorage.getItem(streamingReplyKey(uid)));
+}
+
+export async function writeCachedStreamingPersonaReply(
+  uid: string,
+  reply: CachedStreamingPersonaReply,
+): Promise<void> {
+  await AsyncStorage.setItem(streamingReplyKey(uid), JSON.stringify(reply));
+}
+
+export async function clearCachedStreamingPersonaReply(uid: string): Promise<void> {
+  await AsyncStorage.removeItem(streamingReplyKey(uid));
 }

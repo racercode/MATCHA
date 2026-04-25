@@ -107,6 +107,31 @@ export async function upsertUserAgentRecord(record: UserAgentRecord): Promise<Us
   return nextRecord
 }
 
+export async function clearUserAgentSessions(
+  registryUid: string,
+  matcher: (session: ManagedAgentSessionRecord) => boolean,
+): Promise<number> {
+  const registry = await readRegistry<UserAgentRecord>(USER_AGENTS_PATH)
+  const index = registry.agents.findIndex(agent => agent.uid === registryUid)
+
+  if (index < 0) return 0
+
+  const record = registry.agents[index]
+  const nextSessions = record.sessions.filter(session => !matcher(session))
+  const removedCount = record.sessions.length - nextSessions.length
+
+  if (removedCount === 0) return 0
+
+  registry.agents[index] = {
+    ...record,
+    sessions: nextSessions,
+    updatedAt: Date.now(),
+  }
+
+  await writeRegistry(USER_AGENTS_PATH, registry)
+  return removedCount
+}
+
 export function upsertSession(
   sessions: ManagedAgentSessionRecord[],
   session: ManagedAgentSessionRecord,

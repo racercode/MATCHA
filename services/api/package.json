@@ -11,7 +11,8 @@
     "start": "node dist/index.js",
     "gov:run": "tsx src/agent/gov/main.ts",
     "gov:test": "tsx --test src/lib/documentParser.test.ts src/agent/gov/pipeline.test.ts src/routes/gov.test.ts src/routes/govResourcesDocuments.test.ts src/lib/channelRepliesRepo.test.ts",
-    "gov:upload-resources": "tsx src/scripts/uploadGovResources.ts"
+    "gov:upload-resources": "tsx src/scripts/uploadGovResources.ts",
+    "persona:reset-session": "tsx src/scripts/resetPersonaSession.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View, Image, Pressable, RefreshControl } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -106,7 +108,12 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: bottom + 100, paddingTop: top }]}>
-          <View style={styles.topBanner} />
+          <View style={styles.topBanner}>
+            <Pressable style={styles.settingsButton} onPress={() => router.push('/settings')}>
+              <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
+              <ThemedText style={styles.settingsButtonText}>Settings</ThemedText>
+            </Pressable>
+          </View>
 
           <View style={styles.headerContent}>
             <View style={styles.avatarContainer}>
@@ -214,9 +221,28 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 40,
   },
+  settingsButton: {
+    position: 'absolute',
+    top: 16,
+    right: 20,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: 'rgba(23, 59, 99, 0.18)',
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  settingsButtonText: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
   topBanner: {
     height: 120,
     backgroundColor: '#E0F7FA',
+    position: 'relative',
   },
   headerContent: {
     paddingHorizontal: 20,

@@ -3,7 +3,7 @@ import http from 'http'
 import { createApp } from './app.js'
 import { createWss, upgradeHandler } from './ws/handler.js'
 
-const PORT = Number(process.env.PORT ?? 3001)
+const PORT = Number(process.env.PORT ?? 3000)
 const app = createApp()
 const server = http.createServer(app)
 const wss = createWss()

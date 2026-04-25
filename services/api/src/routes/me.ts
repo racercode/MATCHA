@@ -1,8 +1,12 @@
 import { Router, type Router as IRouter } from 'express'
+import multer from 'multer'
 import { toMs, type ChannelReply as FirestoreChannelReply } from '@matcha/shared-types'
 import { verifyToken, type AuthedRequest } from '../middleware/auth.js'
 import { hasFirebaseAdminEnv } from '../lib/firebaseEnv.js'
-import { auth, db } from '../lib/firebase.js'
+import { auth, db, bucket } from '../lib/firebase.js'
+import { clearUserAgentSessions } from '../agent/general/agentRegistry.js'
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } })
 
 const router: IRouter = Router()
 router.use(verifyToken)
@@ -58,12 +62,35 @@ router.put('/me/profile', async (req, res) => {
 
   const authUpdate: { displayName?: string; photoURL?: string } = {}
   if (typeof name === 'string') authUpdate.displayName = name
-  if (typeof avatar === 'string') authUpdate.photoURL = avatar
+  if (typeof avatar === 'string' && /^https?:\/\//.test(avatar)) authUpdate.photoURL = avatar
   if (Object.keys(authUpdate).length > 0) {
     await auth.updateUser(uid, authUpdate)
   }
 
   res.json({ success: true, data: update })
+})
+
+// POST /me/avatar
+router.post('/me/avatar', upload.single('avatar'), async (req, res) => {
+  const { uid } = req as AuthedRequest
+  if (!req.file) {
+    res.status(400).json({ success: false, error: '未提供圖片', data: null })
+    return
+  }
+
+  const ext = req.file.mimetype.split('/')[1] ?? 'jpg'
+  const filePath = `avatars/${uid}/${Date.now()}.${ext}`
+  const file = bucket.file(filePath)
+
+  await file.save(req.file.buffer, { contentType: req.file.mimetype })
+  await file.makePublic()
+
+  const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`
+
+  await db.collection('userProfiles').doc(uid).set({ avatar: publicUrl, updatedAt: Date.now() }, { merge: true })
+  await auth.updateUser(uid, { photoURL: publicUrl })
+
+  res.json({ success: true, data: { avatar: publicUrl } })
 })
 
 // GET /me/persona-messages
@@ -82,6 +109,44 @@ router.get('/me/persona', async (req, res) => {
   const { uid } = req as AuthedRequest
   const doc = await db.collection('personas').doc(uid).get()
   res.json({ success: true, data: doc.exists ? { uid, ...doc.data() } : null })
+})
+
+// POST /me/reset-memory
+router.post('/me/reset-memory', async (req, res) => {
+  const { uid } = req as AuthedRequest
+
+  try {
+    const [clearedPersonaSessions, chatSnap] = await Promise.all([
+      clearUserAgentSessions(
+        'persona-agent-shared',
+        (session) => session.key === uid || session.key.startsWith(`${uid}:`),
+      ),
+      db.collection('persona_chats').doc(uid).collection('messages').get(),
+    ])
+
+    const deleteBatch = db.batch()
+    for (const doc of chatSnap.docs) {
+      deleteBatch.delete(doc.ref)
+    }
+    deleteBatch.delete(db.collection('persona_chats').doc(uid))
+    deleteBatch.delete(db.collection('personas').doc(uid))
+    await deleteBatch.commit()
+
+    res.json({
+      success: true,
+      data: {
+        clearedPersonaSessions,
+        deletedChatMessages: chatSnap.size,
+        deletedPersona: true,
+      },
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : '重置 memory 失敗',
+      data: null,
+    })
+  }
 })
 
 // GET /me/channel-replies — poll for GovAgent match replies

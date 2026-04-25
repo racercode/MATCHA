@@ -51,10 +51,21 @@ export const useProfile = () => {
     }
   }, []);
 
-  const uploadAvatar = useCallback(async (_userId: string, avatarUri: string) => {
+  const uploadAvatar = useCallback(async (_userId: string, avatarUri: string): Promise<string> => {
     setLoading(true);
     try {
-      return avatarUri;
+      const token = await auth.currentUser?.getIdToken();
+      const ext = avatarUri.split('.').pop()?.split('?')[0] ?? 'jpg';
+      const form = new FormData();
+      form.append('avatar', { uri: avatarUri, name: `avatar.${ext}`, type: `image/${ext}` } as any);
+      const res = await fetch(`${API_BASE_URL}/me/avatar`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error ?? '上傳失敗');
+      return json.data.avatar as string;
     } finally {
       setLoading(false);
     }

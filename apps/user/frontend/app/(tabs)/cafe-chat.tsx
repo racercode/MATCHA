@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, router } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Dimensions, Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PeerPreview, Timestamp } from '@matcha/shared-types';
@@ -7,6 +7,7 @@ import { toMs } from '@matcha/shared-types';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/containers/hooks/useAuth';
+import { auth } from '@/lib/firebase';
 import { API_BASE_URL } from '@/lib/api';
 
 type PeerThreadListItem = {
@@ -44,31 +45,37 @@ const scoreToHighlight = (score?: number) => {
 
 export default function CafeChatScreen() {
   const { top } = useSafeAreaInsets();
-  const { user } = useAuth();
-  const currentUserId = user?.uid ?? 'mock-uid-001';
+  useAuth();
   const [items, setItems] = useState<PeerThreadListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isInsightModalVisible, setIsInsightModalVisible] = useState(true);
 
+  const fetchThreads = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`${API_BASE_URL}/me/peer-threads`, { headers });
+      const json = await res.json();
+      if (json.success) {
+        setItems(json.data.items as PeerThreadListItem[]);
+      }
+    } catch (err) {
+      console.warn('[CafeChat] fetch 失敗', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    let isMounted = true;
+    fetchThreads();
+  }, [fetchThreads]);
 
-    fetch(`${API_BASE_URL}/me/peer-threads`)
-      .then((res) => res.json())
-      .then((json) => {
-        if (isMounted && json.success) {
-          setItems(json.data.items as PeerThreadListItem[]);
-        }
-      })
-      .catch((err) => console.warn('[CafeChat] fetch 失敗', err))
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentUserId]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchThreads();
+    }, [fetchThreads]),
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -141,7 +148,7 @@ export default function CafeChatScreen() {
               <View style={styles.sessionInfo}>
                 <ThemedText style={styles.partnerName}>{item.peer.displayName}</ThemedText>
                 <ThemedText style={styles.tagLine}>
-                  <ThemedText style={styles.tagText}>{item.bullets.slice(0, 2).join('、')}</ThemedText>
+                  <ThemedText style={styles.tagText}>{item.matchRationale?.slice(0, 40) ?? ''}</ThemedText>
                   {item.matchScore != null ? (
                     <ThemedText style={styles.tagText}>{` / 最近 ${scoreToHighlight(item.matchScore)}`}</ThemedText>
                   ) : null}

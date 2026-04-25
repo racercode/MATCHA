@@ -8,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -158,98 +157,106 @@ const LoginScreen = () => {
   return (
     <>
       {loadingMessage != null && <Loading text={loadingMessage} opacity={false} />}
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-        <LinearGradient
-          colors={['#65A1FB', '#F9FBFF']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={styles.container}
+      <LinearGradient
+        colors={['#65A1FB', '#F9FBFF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.container}
+      >
+        <KeyboardAvoidingView
+          style={styles.keyboardContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <KeyboardAvoidingView
-            style={styles.keyboardContainer}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="always"
+            bounces={false}
+            contentInsetAdjustmentBehavior="always"
           >
-            <ScrollView
-              contentContainerStyle={styles.scrollContent}
-              keyboardShouldPersistTaps="handled"
-              bounces={false}
-            >
-              <View style={styles.inner}>
-                <Text style={styles.logo}>🍵 Matcha</Text>
+            <View style={styles.inner}>
+              <Text style={styles.logo}>🍵 Matcha</Text>
 
-                <View style={styles.modeRow}>
-                  <View style={styles.segmentedControl}>
-                    <Pressable
-                      onPress={() => switchMode('signin')}
-                      style={[styles.segmentButton, mode === 'signin' && styles.segmentButtonActive]}
-                    >
-                      <Text style={[styles.segmentText, mode === 'signin' && styles.segmentTextActive]}>Login</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => switchMode('register')}
-                      style={[styles.segmentButton, mode === 'register' && styles.segmentButtonActive]}
-                    >
-                      <Text style={[styles.segmentText, mode === 'register' && styles.segmentTextActive]}>Signup</Text>
-                    </Pressable>
-                  </View>
+              <View style={styles.modeRow}>
+                <View style={styles.segmentedControl}>
+                  <Pressable
+                    onPress={() => switchMode('signin')}
+                    style={[styles.segmentButton, mode === 'signin' && styles.segmentButtonActive]}
+                  >
+                    <Text style={[styles.segmentText, mode === 'signin' && styles.segmentTextActive]}>Login</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => switchMode('register')}
+                    style={[styles.segmentButton, mode === 'register' && styles.segmentButtonActive]}
+                  >
+                    <Text style={[styles.segmentText, mode === 'register' && styles.segmentTextActive]}>Signup</Text>
+                  </Pressable>
                 </View>
-
-                <ThemedTextInput
-                  style={styles.input}
-                  placeholder="Email"
-                  placeholderTextColor="#999"
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoCorrect={false}
-                  returnKeyType="next"
-                />
-                <ThemedTextInput
-                  style={styles.input}
-                  placeholder="密碼"
-                  placeholderTextColor="#999"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  returnKeyType={mode === 'register' ? 'next' : 'done'}
-                />
-                {mode === 'register' ? (
-                  <ThemedTextInput
-                    style={styles.input}
-                    placeholder="確認密碼"
-                    placeholderTextColor="#999"
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry
-                    returnKeyType="done"
-                    onSubmitEditing={handleRegister}
-                  />
-                ) : null}
-
-                <CustomButton
-                  title={mode === 'signin' ? '登入' : '註冊'}
-                  onPress={mode === 'signin' ? handleSignIn : handleRegister}
-                  state={isSubmitting ? 'disabled' : 'default'}
-                  style={{ width: 120, height: 56, marginTop: 8 }}
-                  textStyle={{ fontSize: 16 }}
-                  paddingHorizontal={10}
-                  paddingVertical={8}
-                />
-                <CustomButton
-                  title="使用 Google 登入"
-                  onPress={handleGoogleSignIn}
-                  state={isGoogleSignInAvailable && !isSubmitting ? 'default' : 'disabled'}
-                  style={{ width: 200, height: 48, marginTop: 4, backgroundColor: '#fff' }}
-                  textStyle={{ fontSize: 14, color: '#333' }}
-                  paddingHorizontal={10}
-                  paddingVertical={8}
-                />
               </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </LinearGradient>
-      </TouchableWithoutFeedback>
+
+              <ThemedTextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor="#999"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                inputMode="email"
+                autoComplete="email"
+                textContentType="emailAddress"
+                autoCorrect={false}
+                returnKeyType="next"
+              />
+              <ThemedTextInput
+                style={styles.input}
+                placeholder="密碼"
+                placeholderTextColor="#999"
+                value={password}
+                onChangeText={setPassword}
+                autoCapitalize="none"
+                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                textContentType={mode === 'signin' ? 'password' : 'newPassword'}
+                secureTextEntry
+                returnKeyType={mode === 'register' ? 'next' : 'done'}
+              />
+              {mode === 'register' ? (
+                <ThemedTextInput
+                  style={styles.input}
+                  placeholder="確認密碼"
+                  placeholderTextColor="#999"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  autoCapitalize="none"
+                  autoComplete="new-password"
+                  textContentType="newPassword"
+                  secureTextEntry
+                  returnKeyType="done"
+                  onSubmitEditing={handleRegister}
+                />
+              ) : null}
+
+              <CustomButton
+                title={mode === 'signin' ? '登入' : '註冊'}
+                onPress={mode === 'signin' ? handleSignIn : handleRegister}
+                state={isSubmitting ? 'disabled' : 'default'}
+                style={{ width: 120, height: 56, marginTop: 8 }}
+                textStyle={{ fontSize: 16 }}
+                paddingHorizontal={10}
+                paddingVertical={8}
+              />
+              <CustomButton
+                title="使用 Google 登入"
+                onPress={handleGoogleSignIn}
+                state={isGoogleSignInAvailable && !isSubmitting ? 'default' : 'disabled'}
+                style={{ width: 200, height: 48, marginTop: 4, backgroundColor: '#fff' }}
+                textStyle={{ fontSize: 14, color: '#333' }}
+                paddingHorizontal={10}
+                paddingVertical={8}
+              />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </LinearGradient>
     </>
   );
 };
