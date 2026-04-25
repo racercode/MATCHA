@@ -1,5 +1,5 @@
 import { auth } from './firebase'
-import type { ChannelReply, HumanThread, HumanMessage, GovernmentResource, DashboardStats } from '@/types'
+import type { ChannelReply, HumanThread, HumanMessage, GovernmentResource, DashboardStats, DashboardAgents, DashboardUsers, DashboardMatchStats } from '@/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
@@ -86,4 +86,16 @@ export async function uploadResourceDocument(rid: string, file: File): Promise<v
 
 export async function getDashboard(): Promise<DashboardStats> {
   return apiFetch<DashboardStats>('/gov/dashboard')
+}
+
+export async function getDashboardAgents(): Promise<DashboardAgents> {
+  return apiFetch<DashboardAgents>('/gov/dashboard/agents')
+}
+
+export async function getDashboardUsers(): Promise<DashboardUsers> {
+  return apiFetch<DashboardUsers>('/gov/dashboard/users')
+}
+
+export async function getDashboardStats(): Promise<DashboardMatchStats> {
+  return apiFetch<DashboardMatchStats>('/gov/dashboard/stats')
 }
