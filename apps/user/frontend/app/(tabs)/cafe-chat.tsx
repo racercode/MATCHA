@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Dimensions, Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -117,7 +118,19 @@ export default function CafeChatScreen() {
           <ThemedText style={styles.loadingText}>載入中…</ThemedText>
         ) : (
           items.map((item, index) => (
-            <View key={item.tid} style={[styles.sessionRow, index > 0 && styles.sessionRowSpacing]}>
+            <Pressable
+              key={item.tid}
+              style={[styles.sessionRow, index > 0 && styles.sessionRowSpacing]}
+              onPress={() =>
+                router.push({
+                  pathname: '/thread/[tid]',
+                  params: {
+                    tid: item.tid,
+                    kind: 'peer',
+                    peerName: item.peer.displayName,
+                  },
+                })
+              }>
               <View style={styles.avatarWrapper}>
                 <View style={styles.singleAvatar}>
                   <Image source={PEER_AVATARS[index % PEER_AVATARS.length]} style={styles.avatarImage} resizeMode="cover" />
@@ -135,7 +148,7 @@ export default function CafeChatScreen() {
                 </ThemedText>
                 <ThemedText style={styles.dateLabel}>{formatRelativeLabel(item.updatedAt)}</ThemedText>
               </View>
-            </View>
+            </Pressable>
           ))
         )}
       </ScrollView>

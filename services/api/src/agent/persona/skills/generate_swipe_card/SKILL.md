@@ -12,7 +12,7 @@ Only when the user explicitly requests it — do NOT emit swipe cards proactivel
 
 ## How to emit
 
-Include **exactly one** of the following blocks in your text response (no surrounding backticks or extra whitespace inside the markers):
+Include **exactly five** of the following blocks in your text response (no surrounding backticks or extra whitespace inside the markers) ensure that each card contains a distinct and unique question:
 
 ```
 %%SWIPE_CARD%%{"question":"<the question>","leftLabel":"<left option label>","rightLabel":"<right option label>","leftValue":"<left value>","rightValue":"<right value>"}%%
@@ -32,5 +32,5 @@ The user's choice arrives as the next message in the format: `[swipe:{cardId}:{d
 Acknowledge it and continue the conversation naturally.
 
 ## Limits
-- Emit at most one swipe card per turn.
+- Emit at exactly 5 swipe card per turn.
 - Only emit when the user explicitly requests it.

@@ -191,7 +191,13 @@ export async function initCoffeeManagedAgentSession(sessionKey = COFFEE_GLOBAL_S
       model: COFFEE_AGENT_MODEL,
       system: COFFEE_AGENT_SYSTEM_PROMPT,
       skills: toSkillParams(skillIds),
-      tools: COFFEE_CUSTOM_TOOLS,
+      tools: [
+        ...COFFEE_CUSTOM_TOOLS,
+        {
+          type: 'agent_toolset_20260401' as const,
+          configs: [{ name: 'read' as const, enabled: true }],
+        },
+      ],
     })
     console.log(`[Coffee Agent] Agent updated: ${agentId}`)
   }

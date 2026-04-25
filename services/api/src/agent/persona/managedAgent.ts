@@ -132,9 +132,12 @@ function isRecordReusable(record: UserAgentRecord, sessionKey: string): boolean 
   )
 }
 
-export async function initPersonaManagedAgentSession(uid: string): Promise<string> {
+export async function initPersonaManagedAgentSession(
+  uid: string,
+  scope: 'chat' | 'card' = 'chat',
+): Promise<string> {
   const now = Date.now()
-  const sessionKey = uid
+  const sessionKey = `${uid}:${scope}`
 
   let record = await getUserAgentRecord(PERSONA_AGENT_UID) as (UserAgentRecord & { configVersion?: string; skillIds?: string[] }) | undefined
 
@@ -189,7 +192,13 @@ export async function initPersonaManagedAgentSession(uid: string): Promise<strin
       model: PERSONA_AGENT_MODEL,
       system: PERSONA_AGENT_SYSTEM_PROMPT,
       skills: toSkillParams(skillIds),
-      tools: PERSONA_CUSTOM_TOOLS,
+      tools: [
+        ...PERSONA_CUSTOM_TOOLS,
+        {
+          type: 'agent_toolset_20260401' as const,
+          configs: [{ name: 'read' as const, enabled: true }],
+        },
+      ],
     })
     console.log(`[Persona Agent] Agent updated: ${agentId}`)
   }
@@ -207,7 +216,7 @@ export async function initPersonaManagedAgentSession(uid: string): Promise<strin
   const session = await client.beta.sessions.create({
     agent: agentId,
     environment_id: environmentId,
-    title: `MATCHA Persona Agent Session (${uid})`,
+    title: `MATCHA Persona Agent Session (${uid}:${scope})`,
   })
 
   await upsertUserAgentRecord({

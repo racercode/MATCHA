@@ -2,7 +2,7 @@ import { Router, type Router as IRouter } from 'express'
 import { toMs, type ChannelReply as FirestoreChannelReply } from '@matcha/shared-types'
 import { verifyToken, type AuthedRequest } from '../middleware/auth.js'
 import { hasFirebaseAdminEnv } from '../lib/firebaseEnv.js'
-import { db } from '../lib/firebase.js'
+import { auth, db } from '../lib/firebase.js'
 
 const router: IRouter = Router()
 router.use(verifyToken)
@@ -18,6 +18,64 @@ function serializeChannelReply(reply: FirestoreChannelReply) {
     createdAt: toMs(reply.createdAt),
   }
 }
+
+// GET /me/profile
+router.get('/me/profile', async (req, res) => {
+  const { uid } = req as AuthedRequest
+  const snap = await db.collection('userProfiles').doc(uid).get()
+  if (!snap.exists) {
+    res.json({ success: true, data: null })
+    return
+  }
+  const d = snap.data()!
+  res.json({
+    success: true,
+    data: {
+      name: typeof d.name === 'string' ? d.name : '',
+      bio: typeof d.bio === 'string' ? d.bio : '',
+      school: typeof d.school === 'string' ? d.school : '',
+      grade: typeof d.grade === 'string' ? d.grade : '',
+      birthday: typeof d.birthday === 'string' ? d.birthday : '',
+      avatar: typeof d.avatar === 'string' ? d.avatar : '',
+    },
+  })
+})
+
+// PUT /me/profile
+router.put('/me/profile', async (req, res) => {
+  const { uid } = req as AuthedRequest
+  const { name, bio, school, grade, birthday, avatar } = req.body as Record<string, unknown>
+
+  const update: Record<string, unknown> = { updatedAt: Date.now() }
+  if (typeof name === 'string') update.name = name
+  if (typeof bio === 'string') update.bio = bio
+  if (typeof school === 'string') update.school = school
+  if (typeof grade === 'string') update.grade = grade
+  if (typeof birthday === 'string') update.birthday = birthday
+  if (typeof avatar === 'string') update.avatar = avatar
+
+  await db.collection('userProfiles').doc(uid).set(update, { merge: true })
+
+  const authUpdate: { displayName?: string; photoURL?: string } = {}
+  if (typeof name === 'string') authUpdate.displayName = name
+  if (typeof avatar === 'string') authUpdate.photoURL = avatar
+  if (Object.keys(authUpdate).length > 0) {
+    await auth.updateUser(uid, authUpdate)
+  }
+
+  res.json({ success: true, data: update })
+})
+
+// GET /me/persona-messages
+router.get('/me/persona-messages', async (req, res) => {
+  const { uid } = req as AuthedRequest
+  const snap = await db.collection('persona_chats').doc(uid).collection('messages').get()
+  type MsgDoc = { from: string; text: string; createdAt: { seconds: number; nanoseconds: number } }
+  const items = snap.docs
+    .map((d) => ({ mid: d.id, ...(d.data() as MsgDoc) }))
+    .sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt))
+  res.json({ success: true, data: { items } })
+})
 
 // GET /me/persona
 router.get('/me/persona', async (req, res) => {

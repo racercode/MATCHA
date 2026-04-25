@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -12,23 +12,45 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import type { Timestamp } from '@matcha/shared-types';
+import type { ClientEvent, PeerMessage, ServerEvent, SwipeCard, Timestamp } from '@matcha/shared-types';
 import { msToTimestamp, toMs } from '@matcha/shared-types';
-
-type ChatMessage = {
-  mid: string
-  tid: string
-  from: string
-  type: 'answer' | 'query' | 'human_note'
-  content: Record<string, unknown>
-  createdAt: Timestamp
-};
-import type { ClientEvent, ServerEvent } from '@matcha/shared-types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { useAuth } from '@/containers/hooks/useAuth';
-import { WS_URL } from '@/lib/api';
+import { auth } from '@/lib/firebase';
+import { API_BASE_URL, WS_URL } from '@/lib/api';
+import {
+  clearPendingPersonaMessages,
+  enqueuePendingPersonaMessage,
+  readCachedPersonaMessages,
+  readPendingPersonaMessages,
+  writeCachedPersonaMessages,
+} from '@/lib/personaChatCache';
+import {
+  readCachedPersonaCardState,
+  writeCachedPersonaCardState,
+  type CachedPromptCard,
+} from '@/lib/personaCardCache';
+
+type PersonaMessage = {
+  mid: string;
+  tid: string;
+  from: string;
+  type: 'answer' | 'query' | 'human_note';
+  content: Record<string, unknown>;
+  createdAt: Timestamp;
+};
+
+type ThreadMode = 'persona' | 'peer';
+
+type PeerThreadMessage = {
+  mid: string;
+  tid: string;
+  from: string;
+  content: string;
+  createdAt: Timestamp;
+};
 
 type PostPreviewContent = {
   kind: 'post_preview';
@@ -45,10 +67,12 @@ type PostPreviewContent = {
 type TextContent = { text: string };
 
 const PERSONA_AGENT_ID = 'gov:persona-agent-01';
+const AGENT_AVATAR = require('@/assets/icons/wife.jpg');
+const CARD_PREFETCH_MESSAGE = 'generate_swipe_card';
 
 export const getPersonaThreadId = (uid: string) => `thread-persona-chat-${uid}`;
 
-const buildSeedMessages = (threadId: string, uid: string): ChatMessage[] => [
+const buildSeedMessages = (threadId: string, uid: string): PersonaMessage[] => [
   {
     mid: 'm-001',
     tid: threadId,
@@ -75,8 +99,6 @@ const buildSeedMessages = (threadId: string, uid: string): ChatMessage[] => [
   },
 ];
 
-const AGENT_AVATAR = require('@/assets/icons/wife.jpg');
-
 const formatTimeLabel = (createdAt: Timestamp) =>
   new Date(toMs(createdAt)).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
@@ -84,6 +106,15 @@ const isPostPreview = (content: Record<string, unknown>): content is PostPreview
   content.kind === 'post_preview' && typeof content.author === 'string' && typeof content.text === 'string';
 
 const getTextContent = (content: Record<string, unknown>) => (typeof content.text === 'string' ? content.text : '');
+
+const toCachedPromptCard = (card: SwipeCard): CachedPromptCard => ({
+  cardId: card.cardId,
+  title: card.question,
+  leftLabel: card.leftLabel,
+  rightLabel: card.rightLabel,
+  leftValue: card.leftValue,
+  rightValue: card.rightValue,
+});
 
 function PostPreviewCard({ content }: { content: PostPreviewContent }) {
   return (
@@ -131,7 +162,7 @@ function TypingBubble({ text }: { text: string }) {
   );
 }
 
-function MessageBubble({ message, isOwnMessage }: { message: ChatMessage; isOwnMessage: boolean }) {
+function PersonaMessageBubble({ message, isOwnMessage }: { message: PersonaMessage; isOwnMessage: boolean }) {
   const content = message.content;
 
   if (isPostPreview(content)) {
@@ -157,20 +188,55 @@ function MessageBubble({ message, isOwnMessage }: { message: ChatMessage; isOwnM
   );
 }
 
+function PeerMessageBubble({ message, isOwnMessage }: { message: PeerThreadMessage; isOwnMessage: boolean }) {
+  return (
+    <View style={[styles.messageRow, isOwnMessage ? styles.messageRowOwn : styles.messageRowOther]}>
+      {!isOwnMessage ? <Image source={AGENT_AVATAR} style={styles.avatar} contentFit="cover" /> : null}
+      <View style={[styles.bubble, isOwnMessage ? styles.bubbleOwn : styles.bubbleOther]}>
+        <ThemedText style={[styles.bubbleText, isOwnMessage && styles.bubbleTextOwn]}>{message.content}</ThemedText>
+      </View>
+    </View>
+  );
+}
+
+const buildAuthedHeaders = async (): Promise<Record<string, string>> => {
+  const token = await auth.currentUser?.getIdToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+const buildAuthedWsUrl = async () => {
+  const token = await auth.currentUser?.getIdToken();
+  return token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL;
+};
+
 export default function ChatThreadScreen() {
   const { user } = useAuth();
   const headerHeight = useHeaderHeight();
-  const params = useLocalSearchParams<{ tid?: string }>();
+  const params = useLocalSearchParams<{ tid?: string; kind?: string; peerName?: string }>();
   const [draft, setDraft] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [personaMessages, setPersonaMessages] = useState<PersonaMessage[]>([]);
+  const [peerMessages, setPeerMessages] = useState<PeerThreadMessage[]>([]);
   const [streamingText, setStreamingText] = useState<string | null>(null);
-  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [peerHistoryError, setPeerHistoryError] = useState<string | null>(null);
+  const listRef = useRef<FlatList<PersonaMessage | PeerThreadMessage>>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const streamBufferRef = useRef('');
+  const cardPrefetchCountRef = useRef(0);
+  const cardPrefetchPendingRef = useRef(false);
 
-  const currentUserId = user?.uid ?? 'mock-uid-001';
-  const threadId = getPersonaThreadId(currentUserId);
+  const currentUserId = user?.uid ?? '';
+  const personaThreadId = currentUserId ? getPersonaThreadId(currentUserId) : '';
   const routeTid = Array.isArray(params.tid) ? params.tid[0] : params.tid;
+  const peerName = Array.isArray(params.peerName) ? params.peerName[0] : params.peerName;
+  const mode: ThreadMode =
+    params.kind === 'peer' || (routeTid != null && routeTid !== personaThreadId) ? 'peer' : 'persona';
+  const activeThreadId = mode === 'peer' ? routeTid ?? '' : personaThreadId;
+
+  const visibleMessages = useMemo(
+    () => (mode === 'peer' ? peerMessages : personaMessages),
+    [mode, peerMessages, personaMessages],
+  );
 
   const scrollToBottom = (animated = true) => {
     requestAnimationFrame(() => {
@@ -178,105 +244,297 @@ export default function ChatThreadScreen() {
     });
   };
 
-  // Redirect to canonical thread URL if needed
   useEffect(() => {
     if (!user?.uid) return;
-    if (routeTid && routeTid !== threadId) {
-      router.replace(`/thread/${threadId}`);
+    if (mode === 'persona' && routeTid && routeTid !== personaThreadId) {
+      router.replace(`/thread/${personaThreadId}`);
     }
-  }, [routeTid, threadId, user?.uid]);
+  }, [mode, personaThreadId, routeTid, user?.uid]);
 
-  // Initialize messages with seed data
-  useEffect(() => {
-    setMessages(buildSeedMessages(threadId, currentUserId));
-  }, [currentUserId, threadId]);
-
-  // WebSocket connection
   useEffect(() => {
     if (!currentUserId) return;
-    const ws = new WebSocket(`${WS_URL}?token=${currentUserId}`);
-    wsRef.current = ws;
+    if (mode === 'persona') {
+      let isMounted = true;
+      setIsLoadingHistory(true);
+      (async () => {
+        try {
+          const cached = await readCachedPersonaMessages(currentUserId);
+          if (isMounted && cached.length > 0) {
+            setPersonaMessages(
+              cached.map((item) => ({
+                mid: item.mid,
+                tid: personaThreadId,
+                from: item.from,
+                type: item.from.startsWith('human:') ? ('human_note' as const) : ('answer' as const),
+                content: { text: item.text },
+                createdAt: item.createdAt,
+              })),
+            );
+          }
 
-    ws.onopen = () => {
-      console.log('[Chat] WS connected');
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data: ServerEvent = JSON.parse(event.data);
-
-        if (data.type === 'agent_reply') {
-          if (!data.done) {
-            // Accumulate streaming chunks
-            streamBufferRef.current += data.content;
-            setStreamingText(streamBufferRef.current);
-            scrollToBottom();
-          } else {
-            // Finalize message
-            const finalText = streamBufferRef.current + (data.content ?? '');
-            streamBufferRef.current = '';
-            setStreamingText(null);
-
-            if (finalText.trim()) {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  mid: `agent-${Date.now()}`,
-                  tid: threadId,
-                  from: PERSONA_AGENT_ID,
-                  type: 'answer',
-                  content: { text: finalText },
-                  createdAt: msToTimestamp(Date.now()),
-                },
-              ]);
+          const headers = await buildAuthedHeaders();
+          const res = await fetch(`${API_BASE_URL}/me/persona-messages`, { headers });
+          const json = await res.json();
+          if (!res.ok || !json.success) {
+            throw new Error(json.error ?? '讀取對話失敗');
+          }
+          if (!isMounted) return;
+          const items: { mid: string; from: string; text: string; createdAt: Timestamp }[] =
+            Array.isArray(json.data?.items) ? json.data.items : [];
+          if (items.length > 0) {
+            const mapped = items.map((item) => ({
+              mid: item.mid,
+              tid: personaThreadId,
+              from: item.from,
+              type: item.from.startsWith('human:') ? ('human_note' as const) : ('answer' as const),
+              content: { text: item.text },
+              createdAt: item.createdAt,
+            }));
+            setPersonaMessages(mapped);
+            await writeCachedPersonaMessages(
+              currentUserId,
+              items.map((item) => ({
+                mid: item.mid,
+                from: item.from,
+                text: item.text,
+                createdAt: item.createdAt,
+              })),
+            );
+          } else if (cached.length === 0) {
+            setPersonaMessages(buildSeedMessages(personaThreadId, currentUserId));
+          }
+        } catch {
+          if (isMounted) {
+            const cached = await readCachedPersonaMessages(currentUserId);
+            if (cached.length === 0) {
+              setPersonaMessages(buildSeedMessages(personaThreadId, currentUserId));
             }
+          }
+        } finally {
+          if (isMounted) setIsLoadingHistory(false);
+        }
+      })();
+      return () => { isMounted = false; };
+    }
+
+    if (mode === 'peer' && activeThreadId) {
+      let isMounted = true;
+      setIsLoadingHistory(true);
+      setPeerHistoryError(null);
+      (async () => {
+        try {
+          const headers = await buildAuthedHeaders();
+          const res = await fetch(`${API_BASE_URL}/peer-threads/${activeThreadId}/messages`, { headers });
+          const json = await res.json();
+          if (!isMounted) return;
+          if (!res.ok || !json.success) throw new Error(json.error ?? '讀取對話失敗');
+          const items = Array.isArray(json.data?.items) ? (json.data.items as PeerMessage[]) : [];
+          setPeerMessages(items.map((message) => ({ ...message, tid: activeThreadId })));
+        } catch (error) {
+          if (!isMounted) return;
+          setPeerHistoryError(error instanceof Error ? error.message : '讀取對話失敗');
+        } finally {
+          if (isMounted) setIsLoadingHistory(false);
+        }
+      })();
+      return () => { isMounted = false; };
+    }
+  }, [activeThreadId, currentUserId, mode, personaThreadId]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    if (mode !== 'persona') return;
+
+    void writeCachedPersonaMessages(
+      currentUserId,
+      personaMessages.map((message) => ({
+        mid: message.mid,
+        from: message.from,
+        text: getTextContent(message.content),
+        createdAt: message.createdAt,
+      })),
+    );
+  }, [currentUserId, mode, personaMessages]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    let isActive = true;
+
+    (async () => {
+      const wsUrl = await buildAuthedWsUrl();
+      if (!isActive) return;
+
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = async () => {
+        if (mode !== 'persona') return;
+
+        const pending = await readPendingPersonaMessages(currentUserId);
+        if (pending.length === 0) return;
+
+        for (const message of pending) {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          const event: ClientEvent = { type: 'persona_message', content: message.text };
+          ws.send(JSON.stringify(event));
+        }
+
+        await clearPendingPersonaMessages(currentUserId);
+
+        const cachedCardState = await readCachedPersonaCardState(currentUserId);
+        const hasCachedCards =
+          Boolean(cachedCardState) &&
+          (cachedCardState.cards.length > 0 ||
+            cachedCardState.answers.length > 0 ||
+            cachedCardState.awaitingBatchResponse);
+
+        if (!hasCachedCards && ws.readyState === WebSocket.OPEN) {
+          cardPrefetchPendingRef.current = true;
+          cardPrefetchCountRef.current = 0;
+          const event: ClientEvent = { type: 'swipe_card_request', content: CARD_PREFETCH_MESSAGE };
+          ws.send(JSON.stringify(event));
+        }
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data: ServerEvent = JSON.parse(event.data);
+
+          if (mode === 'persona' && data.type === 'agent_reply') {
+            if (!data.done) {
+              streamBufferRef.current += data.content;
+              setStreamingText(streamBufferRef.current);
+              scrollToBottom();
+            } else {
+              if (cardPrefetchPendingRef.current && cardPrefetchCountRef.current > 0) {
+                void (async () => {
+                  const existing = await readCachedPersonaCardState(currentUserId);
+                  await writeCachedPersonaCardState(currentUserId, {
+                    cards: existing?.cards ?? [],
+                    answers: existing?.answers ?? [],
+                    expectedBatchSize: cardPrefetchCountRef.current,
+                    awaitingBatchResponse: existing?.awaitingBatchResponse ?? false,
+                  });
+                })();
+              }
+              cardPrefetchPendingRef.current = false;
+              cardPrefetchCountRef.current = 0;
+
+              const finalText = streamBufferRef.current + (data.content ?? '');
+              streamBufferRef.current = '';
+              setStreamingText(null);
+
+              if (finalText.trim()) {
+                setPersonaMessages((prev) => [
+                  ...prev,
+                  {
+                    mid: `agent-${Date.now()}`,
+                    tid: personaThreadId,
+                    from: PERSONA_AGENT_ID,
+                    type: 'answer',
+                    content: { text: finalText },
+                    createdAt: msToTimestamp(Date.now()),
+                  },
+                ]);
+              }
+              scrollToBottom();
+            }
+          }
+
+          if (mode === 'persona' && data.type === 'swipe_card') {
+            cardPrefetchCountRef.current += 1;
+            void (async () => {
+              const existing = await readCachedPersonaCardState(currentUserId);
+              const nextCard = toCachedPromptCard(data.card);
+              const cards = existing?.cards ?? [];
+              if (cards.some((card) => card.cardId === nextCard.cardId)) return;
+
+              await writeCachedPersonaCardState(currentUserId, {
+                cards: [...cards, nextCard],
+                answers: existing?.answers ?? [],
+                expectedBatchSize: existing?.expectedBatchSize ?? 0,
+                awaitingBatchResponse: existing?.awaitingBatchResponse ?? false,
+              });
+            })();
+          }
+
+          if (mode === 'peer' && data.type === 'peer_message') {
+            setPeerMessages((prev) => {
+              if (prev.some((message) => message.mid === data.message.mid)) return prev;
+              return [...prev, { ...data.message, tid: activeThreadId }];
+            });
             scrollToBottom();
           }
+        } catch {
+          // ignore malformed events
         }
-      } catch {
-        // ignore malformed events
-      }
-    };
+      };
 
-    ws.onerror = (e) => {
-      console.warn('[Chat] WS error', e);
-    };
+      ws.onerror = (e) => {
+        console.warn('[Chat] WS error', e);
+      };
 
-    ws.onclose = () => {
-      console.log('[Chat] WS disconnected');
-    };
+      ws.onclose = () => {
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
+      };
+    })();
 
     return () => {
-      ws.close();
+      isActive = false;
+      wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [currentUserId, threadId]);
+  }, [activeThreadId, currentUserId, mode, personaThreadId]);
 
   const handleSend = () => {
     const content = draft.trim();
-    if (!content) return;
+    if (!content || !activeThreadId) return;
 
     setDraft('');
 
-    // Add user message to local state
-    setMessages((prev) => [
-      ...prev,
-      {
-        mid: `human-${Date.now()}`,
-        tid: threadId,
-        from: `human:${currentUserId}`,
-        type: 'human_note',
-        content: { text: content },
-        createdAt: msToTimestamp(Date.now()),
-      },
-    ]);
-    scrollToBottom();
+    if (mode === 'persona') {
+      setPersonaMessages((prev) => [
+        ...prev,
+        {
+          mid: `human-${Date.now()}`,
+          tid: personaThreadId,
+          from: `human:${currentUserId}`,
+          type: 'human_note',
+          content: { text: content },
+          createdAt: msToTimestamp(Date.now()),
+        },
+      ]);
 
-    // Send to mock server via WebSocket
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const event: ClientEvent = { type: 'persona_message', content };
-      wsRef.current.send(JSON.stringify(event));
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        const event: ClientEvent = { type: 'persona_message', content };
+        wsRef.current.send(JSON.stringify(event));
+      } else {
+        void enqueuePendingPersonaMessage(currentUserId, {
+          mid: `pending-${Date.now()}`,
+          text: content,
+          createdAt: msToTimestamp(Date.now()),
+        });
+      }
+    } else {
+      const localMessage: PeerThreadMessage = {
+        mid: `local-${Date.now()}`,
+        tid: activeThreadId,
+        from: `user:${currentUserId}`,
+        content,
+        createdAt: msToTimestamp(Date.now()),
+      };
+
+      setPeerMessages((prev) => [...prev, localMessage]);
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        const event: ClientEvent = { type: 'peer_message', threadId: activeThreadId, content };
+        wsRef.current.send(JSON.stringify(event));
+      }
     }
+
+    scrollToBottom();
   };
 
   return (
@@ -287,9 +545,16 @@ export default function ChatThreadScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
         >
+          {mode === 'peer' ? (
+            <View style={styles.threadHeader}>
+              <ThemedText style={styles.threadEyebrow}>Coffee Chat</ThemedText>
+              <ThemedText style={styles.threadTitle}>{peerName ?? '對話紀錄'}</ThemedText>
+            </View>
+          ) : null}
+
           <FlatList
             ref={listRef}
-            data={messages}
+            data={visibleMessages}
             keyExtractor={(item) => item.mid}
             contentContainerStyle={styles.messagesContent}
             showsVerticalScrollIndicator={false}
@@ -298,22 +563,34 @@ export default function ChatThreadScreen() {
             automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
             onContentSizeChange={() => scrollToBottom(false)}
             renderItem={({ item, index }) => {
-              const previousMessage = index > 0 ? messages[index - 1] : null;
+              const previousMessage = index > 0 ? visibleMessages[index - 1] : null;
               const showTimestamp =
                 previousMessage == null ||
                 toMs(item.createdAt) - toMs(previousMessage.createdAt) > 1000 * 60 * 8;
-              const isOwnMessage = item.from === `human:${currentUserId}`;
+              const isOwnMessage =
+                mode === 'peer' ? item.from === `user:${currentUserId}` : item.from === `human:${currentUserId}`;
 
               return (
                 <View style={styles.messageBlock}>
                   {showTimestamp ? (
                     <ThemedText style={styles.timestamp}>{formatTimeLabel(item.createdAt)}</ThemedText>
                   ) : null}
-                  <MessageBubble message={item} isOwnMessage={isOwnMessage} />
+                  {mode === 'peer' ? (
+                    <PeerMessageBubble message={item as PeerThreadMessage} isOwnMessage={isOwnMessage} />
+                  ) : (
+                    <PersonaMessageBubble message={item as PersonaMessage} isOwnMessage={isOwnMessage} />
+                  )}
                 </View>
               );
             }}
-            ListFooterComponent={streamingText !== null ? <TypingBubble text={streamingText} /> : null}
+            ListHeaderComponent={
+              isLoadingHistory ? (
+                <ThemedText style={styles.statusText}>載入對話中…</ThemedText>
+              ) : peerHistoryError ? (
+                <ThemedText style={styles.errorText}>{peerHistoryError}</ThemedText>
+              ) : null
+            }
+            ListFooterComponent={mode === 'persona' && streamingText !== null ? <TypingBubble text={streamingText} /> : null}
           />
 
           <View style={styles.composerBar}>
@@ -343,6 +620,25 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
   container: { flex: 1, backgroundColor: '#FFFFFF' },
   flex: { flex: 1 },
+  threadHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    gap: 2,
+    backgroundColor: '#FFFFFF',
+  },
+  threadEyebrow: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: '#65A1FB',
+    fontWeight: '700',
+  },
+  threadTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
   messagesContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24, gap: 8 },
   messageBlock: { gap: 10 },
   timestamp: {
@@ -352,6 +648,20 @@ const styles = StyleSheet.create({
     color: '#C0C4CC',
     fontWeight: '600',
     marginVertical: 8,
+  },
+  statusText: {
+    textAlign: 'center',
+    color: '#9CA3AF',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  errorText: {
+    textAlign: 'center',
+    color: '#DC2626',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 16,
   },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   messageRowOther: { justifyContent: 'flex-start' },

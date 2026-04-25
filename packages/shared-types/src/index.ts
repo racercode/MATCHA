@@ -196,6 +196,11 @@ export interface SwipeCard {
 }
 
 export type SwipeDirection = 'left' | 'right'
+export interface SwipeCardAnswer {
+  cardId: string
+  direction: SwipeDirection
+  value: string
+}
 
 // ---------------------------------------------------------------------------
 // WebSocket Events  (see api-doc §9)
@@ -205,6 +210,12 @@ export type SwipeDirection = 'left' | 'right'
 export type ClientEvent =
   // Persona Chat — swipe handled by sending special content string
   | { type: 'persona_message'; content: string }
+  // Card tab — request a batch of swipe cards without polluting chat history
+  | { type: 'swipe_card_request'; content?: string }
+  // Card tab — submit a swipe answer back to the card-specific session
+  | { type: 'swipe_card_answer'; cardId: string; direction: SwipeDirection; value: string }
+  // Card tab — submit a whole batch of swipe answers at once
+  | { type: 'swipe_card_batch_answer'; answers: SwipeCardAnswer[] }
   // Coffee Chat — CoffeeAgent relays and pushes to both participants
   | { type: 'peer_message'; threadId: string; content: string }
   // Human Thread — citizen or gov_staff sends a message

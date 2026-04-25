@@ -1,54 +1,199 @@
-import { useRef, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import type { ClientEvent, ServerEvent, SwipeCard, SwipeCardAnswer } from '@matcha/shared-types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { auth } from '@/lib/firebase';
+import { WS_URL } from '@/lib/api';
+import {
+  clearCachedPersonaCardState,
+  readCachedPersonaCardState,
+  writeCachedPersonaCardState,
+} from '@/lib/personaCardCache';
 
 type ChoiceKey = 'no' | 'yes' | null;
-
-const prompts = [
-  {
-    badge: '方向確認',
-    title: '你目前是否有在考慮出國進修？',
-    description:
-      '你的檔案顯示對設計有興趣，但還未確定路徑。部分資源，如出國獎學金、語言課程補助，需要先知道你是否有這個方向。\n\n如果你完全沒有這個打算，matcha 就不會主動推送相關資源。',
-    hint: '回答這個問題能讓推薦更精準',
-  },
-  {
-    badge: '學習偏好',
-    title: '你會想先從接案或實習開始累積作品嗎？',
-    description:
-      '如果你偏好先用實作累積經驗，matcha 會優先整理短期專案、實習缺口與作品集範例給你。\n\n如果你比較想先把基礎打穩，也可以改成推薦課程與入門社群。',
-    hint: '你的回答會影響資源排序',
-  },
-  {
-    badge: '生活安排',
-    title: '你目前比較想找平日還是假日可參與的機會？',
-    description:
-      '不同課程、活動與社群聚會的時間差很多。知道你的可投入時段後，matcha 才能把真的排得進生活的選項放前面。\n\n這樣你看到的推薦會更實際，也更容易開始行動。',
-    hint: 'matcha 會依你的時間安排調整推薦節奏',
-  },
-];
+type PromptCard = {
+  cardId: string;
+  badge?: string;
+  title: string;
+  description?: string;
+  hint?: string;
+  leftLabel: string;
+  rightLabel: string;
+  leftValue: string;
+  rightValue: string;
+};
 
 const SWIPE_THRESHOLD = 80;
+const REQUEST_CARD_MESSAGE = 'generate_swipe_card';
 
-const choiceLabels: Record<Exclude<ChoiceKey, null>, string> = {
-  no: '先不考慮',
-  yes: '有在想',
+const buildAuthedWsUrl = async () => {
+  const token = await auth.currentUser?.getIdToken();
+  return token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL;
+};
+
+const toPromptCard = (card: SwipeCard): PromptCard => {
+  return {
+    cardId: card.cardId,
+    title: card.question,
+    leftLabel: card.leftLabel,
+    rightLabel: card.rightLabel,
+    leftValue: card.leftValue,
+    rightValue: card.rightValue,
+  };
 };
 
 export default function CardScreen() {
   const { top } = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [cards, setCards] = useState<PromptCard[]>([]);
   const [selectedChoice, setSelectedChoice] = useState<ChoiceKey>(null);
 
   const position = useRef(new Animated.ValueXY()).current;
+  const wsRef = useRef<WebSocket | null>(null);
+  const currentCardRef = useRef<PromptCard | null>(null);
+  const cardsRef = useRef<PromptCard[]>([]);
+  const requestPendingRef = useRef(false);
+  const batchAnswersRef = useRef<SwipeCardAnswer[]>([]);
+  const receivedBatchCountRef = useRef(0);
+  const expectedBatchSizeRef = useRef(0);
+  const awaitingBatchResponseRef = useRef(false);
+  const restoreCompleteRef = useRef(false);
+  const currentUserIdRef = useRef<string | null>(null);
 
-  const currentPrompt = useMemo(() => prompts[currentIndex], [currentIndex]);
+  const currentPrompt = useMemo(() => cards[0] ?? null, [cards]);
+
+  useEffect(() => {
+    currentCardRef.current = currentPrompt;
+  }, [currentPrompt]);
+
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
+
+  const persistCardState = useCallback(async () => {
+    const uid = currentUserIdRef.current;
+    if (!uid) return;
+
+    const hasState =
+      cardsRef.current.length > 0 ||
+      batchAnswersRef.current.length > 0 ||
+      awaitingBatchResponseRef.current;
+
+    if (!hasState) {
+      await clearCachedPersonaCardState(uid);
+      return;
+    }
+
+    await writeCachedPersonaCardState(uid, {
+      cards: cardsRef.current,
+      answers: batchAnswersRef.current,
+      expectedBatchSize: expectedBatchSizeRef.current,
+      awaitingBatchResponse: awaitingBatchResponseRef.current,
+    });
+  }, []);
+
+  useEffect(() => {
+    currentUserIdRef.current = auth.currentUser?.uid ?? null;
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      const uid = auth.currentUser?.uid;
+      currentUserIdRef.current = uid ?? null;
+
+      if (!uid) {
+        restoreCompleteRef.current = true;
+        return;
+      }
+
+      const cached = await readCachedPersonaCardState(uid);
+      if (!isMounted || !cached) {
+        restoreCompleteRef.current = true;
+        if (wsRef.current?.readyState === WebSocket.OPEN && cardsRef.current.length === 0) {
+          requestNextCard();
+        }
+        return;
+      }
+
+      cardsRef.current = cached.cards;
+      batchAnswersRef.current = cached.answers;
+      expectedBatchSizeRef.current = cached.expectedBatchSize;
+      awaitingBatchResponseRef.current = cached.awaitingBatchResponse;
+      setCards(cached.cards);
+      restoreCompleteRef.current = true;
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        if (cached.awaitingBatchResponse && cached.answers.length > 0) {
+          awaitingBatchResponseRef.current = false;
+          submitBatchAnswers();
+        } else if (cached.cards.length === 0) {
+          requestNextCard();
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [requestNextCard, submitBatchAnswers]);
+
+  const requestNextCard = useCallback(() => {
+    if (requestPendingRef.current) return;
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+
+    batchAnswersRef.current = [];
+    receivedBatchCountRef.current = 0;
+    expectedBatchSizeRef.current = 0;
+    requestPendingRef.current = true;
+    const event: ClientEvent = { type: 'swipe_card_request', content: REQUEST_CARD_MESSAGE };
+    wsRef.current.send(JSON.stringify(event));
+    void persistCardState();
+  }, [persistCardState]);
+
+  const submitBatchAnswers = useCallback(() => {
+    if (awaitingBatchResponseRef.current) return;
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    if (batchAnswersRef.current.length === 0) return;
+
+    awaitingBatchResponseRef.current = true;
+    const event: ClientEvent = {
+      type: 'swipe_card_batch_answer',
+      answers: batchAnswersRef.current,
+    };
+    wsRef.current.send(JSON.stringify(event));
+    void persistCardState();
+  }, [persistCardState]);
+
+  const maybeSubmitBatchAnswers = useCallback(() => {
+    const expectedBatchSize = expectedBatchSizeRef.current;
+    if (requestPendingRef.current) return;
+    if (cardsRef.current.length > 0) return;
+    if (expectedBatchSize <= 0) return;
+    if (batchAnswersRef.current.length < expectedBatchSize) return;
+
+    submitBatchAnswers();
+  }, [submitBatchAnswers]);
+
+  const showNextCard = () => {
+    setCards((prev) => {
+      const next = prev.slice(1);
+      cardsRef.current = next;
+      return next;
+    });
+    setSelectedChoice(null);
+    position.setValue({ x: 0, y: 0 });
+    void persistCardState();
+  };
 
   const advanceCard = (choice: Exclude<ChoiceKey, null>) => {
+    const activeCard = currentCardRef.current;
+    if (!activeCard) return;
+
     setSelectedChoice(choice);
     const toX = choice === 'yes' ? 400 : -400;
     Animated.timing(position, {
@@ -56,15 +201,108 @@ export default function CardScreen() {
       duration: 250,
       useNativeDriver: true,
     }).start(() => {
-      position.setValue({ x: 0, y: 0 });
-      setCurrentIndex((prev) => (prev + 1) % prompts.length);
-      setSelectedChoice(null);
+      const direction = choice === 'yes' ? 'right' : 'left';
+      const value = choice === 'yes' ? activeCard.rightValue : activeCard.leftValue;
+      batchAnswersRef.current = [
+        ...batchAnswersRef.current,
+        { cardId: activeCard.cardId, direction, value },
+      ];
+      showNextCard();
+      void persistCardState();
+      maybeSubmitBatchAnswers();
     });
   };
 
+  useEffect(() => {
+    let isActive = true;
+
+    (async () => {
+      const wsUrl = await buildAuthedWsUrl();
+      if (!isActive) return;
+
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (!restoreCompleteRef.current) return;
+
+        if (awaitingBatchResponseRef.current && batchAnswersRef.current.length > 0) {
+          awaitingBatchResponseRef.current = false;
+          submitBatchAnswers();
+          return;
+        }
+
+        if (cardsRef.current.length === 0) {
+          requestNextCard();
+        }
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data: ServerEvent = JSON.parse(event.data);
+          if (data.type === 'swipe_card') {
+            receivedBatchCountRef.current += 1;
+            setCards((prev) => {
+              if (prev.some((card) => card.cardId === data.card.cardId)) {
+                return prev;
+              }
+              const next = [...prev, toPromptCard(data.card)];
+              cardsRef.current = next;
+              void persistCardState();
+              return next;
+            });
+          }
+
+          if (data.type === 'agent_reply' && data.done) {
+            const wasAwaitingBatchResponse = awaitingBatchResponseRef.current;
+            requestPendingRef.current = false;
+            if (receivedBatchCountRef.current > 0) {
+              expectedBatchSizeRef.current = receivedBatchCountRef.current;
+              void persistCardState();
+            }
+
+            maybeSubmitBatchAnswers();
+
+            if (wasAwaitingBatchResponse) {
+              awaitingBatchResponseRef.current = false;
+              batchAnswersRef.current = [];
+              expectedBatchSizeRef.current = 0;
+              void persistCardState();
+              requestNextCard();
+            }
+          }
+
+          if (data.type === 'error') {
+            requestPendingRef.current = false;
+            void persistCardState();
+          }
+        } catch {
+          requestPendingRef.current = false;
+          void persistCardState();
+        }
+      };
+
+      ws.onclose = () => {
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
+        requestPendingRef.current = false;
+        void persistCardState();
+      };
+    })();
+
+    return () => {
+      isActive = false;
+      wsRef.current?.close();
+      wsRef.current = null;
+      requestPendingRef.current = false;
+      void persistCardState();
+    };
+  }, [maybeSubmitBatchAnswers, persistCardState, requestNextCard, submitBatchAnswers]);
+
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => Boolean(currentCardRef.current),
       onMoveShouldSetPanResponder: (_, gestureState) =>
         Math.abs(gestureState.dx) > Math.abs(gestureState.dy) && Math.abs(gestureState.dx) > 5,
       onPanResponderMove: Animated.event([null, { dx: position.x }], { useNativeDriver: false }),
@@ -90,7 +328,10 @@ export default function CardScreen() {
   });
 
   const goToPrompt = (index: number) => {
-    setCurrentIndex(index);
+    setCards((prev) => {
+      if (index <= 0 || index >= prev.length) return prev;
+      return prev.slice(index);
+    });
     setSelectedChoice(null);
     position.setValue({ x: 0, y: 0 });
   };
@@ -119,19 +360,27 @@ export default function CardScreen() {
             ]}
             {...panResponder.panHandlers}>
             <View style={styles.cardTopBar} />
-            <View style={styles.badge}>
-              <ThemedText style={styles.badgeText}>{currentPrompt.badge}</ThemedText>
-            </View>
-
-            <ThemedText style={styles.questionTitle}>{currentPrompt.title}</ThemedText>
-            <ThemedText style={styles.questionDescription}>{currentPrompt.description}</ThemedText>
-
-            <View style={styles.cardFooter}>
-              <ThemedText style={styles.cardHint}>{currentPrompt.hint}</ThemedText>
-              <View style={styles.percentPill}>
-                <ThemedText style={styles.percentText}>+15%</ThemedText>
+            {currentPrompt?.badge ? (
+              <View style={styles.badge}>
+                <ThemedText style={styles.badgeText}>{currentPrompt.badge}</ThemedText>
               </View>
-            </View>
+            ) : null}
+
+            <ThemedText style={styles.questionTitle}>{currentPrompt?.title ?? ''}</ThemedText>
+            {currentPrompt?.description ? (
+              <ThemedText style={styles.questionDescription}>{currentPrompt.description}</ThemedText>
+            ) : (
+              <View style={styles.questionDescription} />
+            )}
+
+            {currentPrompt?.hint ? (
+              <View style={styles.cardFooter}>
+                <ThemedText style={styles.cardHint}>{currentPrompt.hint}</ThemedText>
+                <View style={styles.percentPill}>
+                  <ThemedText style={styles.percentText}>+15%</ThemedText>
+                </View>
+              </View>
+            ) : null}
           </Animated.View>
 
         </View>
@@ -141,23 +390,23 @@ export default function CardScreen() {
             style={[styles.secondaryButton, selectedChoice === 'no' && styles.secondaryButtonActive]}
             onPress={() => advanceCard('no')}>
             <ThemedText style={[styles.secondaryButtonText, selectedChoice === 'no' && styles.secondaryButtonTextActive]}>
-              ← {choiceLabels.no}
+              ← {currentPrompt?.leftLabel ?? ''}
             </ThemedText>
           </Pressable>
 
           <Pressable
             style={[styles.primaryButton, selectedChoice === 'yes' && styles.primaryButtonActive]}
             onPress={() => advanceCard('yes')}>
-            <ThemedText style={styles.primaryButtonText}>{choiceLabels.yes} →</ThemedText>
+            <ThemedText style={styles.primaryButtonText}>{currentPrompt?.rightLabel ?? ''} →</ThemedText>
           </Pressable>
         </View>
 
         <View style={styles.dotsRow}>
-          {prompts.map((prompt, index) => (
+          {cards.map((prompt, index) => (
             <Pressable
-              key={prompt.title}
+              key={prompt.cardId}
               onPress={() => goToPrompt(index)}
-              style={[styles.dot, index === currentIndex && styles.dotActive]}
+              style={[styles.dot, index === 0 && styles.dotActive]}
             />
           ))}
         </View>
