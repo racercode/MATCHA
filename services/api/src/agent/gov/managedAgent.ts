@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const GOV_AGENT_MODEL = 'claude-haiku-4-5'
-const GOV_AGENT_CONFIG_VERSION = 'persist-v1'
+const GOV_AGENT_CONFIG_VERSION = 'persist-v2'
 const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 const DEFAULT_AGENCY_NAME = '臺北市青年局'
 const DEFAULT_SESSION_KEY = 'default'
