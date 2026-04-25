@@ -9,12 +9,12 @@ Phase 1 實作最小可行的 Gov Agent 媒合 pipeline：假資料 + Claude Man
 ### 型別定義（`types.ts`）
 
 - `MatchDecision` — Claude 的結構化媒合判斷（eligible、score、reason、missingInfo、suggestedFirstMessage）
-- `MatchAssessment` — 將一組 broadcast + resource + decision 綁在一起
+- `MatchAssessment` — 將一組 channel message + resource + decision 綁在一起
 - `GovAgentPipelineResult` — pipeline 最終輸出（assessment + thread + initialMessage）
 
 ### 假資料（`fakeData.ts`）
 
-三筆假 persona 廣播和三筆臺北市青年局的假政府資源：
+三筆假 channel message 和三筆臺北市青年局的假政府資源：
 
 | 使用者 | 摘要                              |
 |--------|-----------------------------------|
@@ -48,7 +48,7 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 
 | Tool wrapper | 檔案 | 說明 |
 |--------------|------|------|
-| `readChannelToolWrapper` | `toolWrappers/readChannel.ts` | 回傳 persona 廣播（支援 `since` 和 `limit` 篩選） |
+| `readChannelToolWrapper` | `toolWrappers/readChannel.ts` | 回傳 channel messages（支援 `since` 和 `limit` 篩選） |
 | `queryProgramDocsToolWrapper` | `toolWrappers/queryProgramDocs.ts` | 依 runtime `agencyId/resourceId` context 只回傳此 Resource Agent 綁定的資源 |
 | `proposeMatchToolWrapper` | `toolWrappers/proposeMatch.ts` | 根據 `MatchAssessment` 建立 draft `AgentThread` 與 initial `ThreadMessage` |
 
@@ -77,13 +77,13 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 ### Pipeline（`pipeline.ts`）
 
 - `parseMatchDecision(rawText)` — 驗證並解析 Claude 的 JSON 回應，自動清除 markdown code fence
-- `runGovAgentForChannelUpdate(sessionId, broadcast, context)` — channel 更新時喚醒單一 Resource Agent，讓 Agent 自主使用 custom tools，最後回傳 match result 或 `null`
-- `runGovAgentPipeline(resourceAgents, broadcasts, threshold?)` — 對每筆 channel update 逐一呼叫各 Resource Agent，收集有回應的結果
+- `runGovAgentForChannelUpdate(sessionId, channelMessage, context)` — channel 更新時喚醒單一 Resource Agent，讓 Agent 自主使用 custom tools，最後回傳 match result 或 `null`
+- `runGovAgentPipeline(resourceAgents, messages, threshold?)` — 對每筆 channel update 逐一呼叫各 Resource Agent，收集有回應的結果
 
 ### 測試進入點（`main.ts`）
 
 執行腳本，流程：
-1. 透過 `readChannelToolWrapper` 載入假廣播
+1. 透過 `readChannelToolWrapper` 載入假 channel messages
 2. 從 registry 依每個 resource 重用或初始化 Claude Managed Agent session
 3. 對每筆 channel update 逐一喚醒 Resource Agent
 4. Agent 自主呼叫 custom tools

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.resolve(__dirname, '../../../../../.env') })
 
-import { fakeChannelBroadcasts, fakeGovernmentResources } from './fakeData.js'
+import { fakeGovernmentResources } from './fakeData.js'
 import { readChannelToolWrapper } from './toolWrappers/index.js'
 import { initGovManagedAgentSession } from './managedAgent.js'
 import { runGovAgentPipeline } from './pipeline.js'
@@ -14,8 +14,8 @@ import type { GovernmentResource } from '@matcha/shared-types'
 async function main() {
   console.log('=== MATCHA Gov Agent Pipeline (Phase 1) ===\n')
 
-  const { broadcasts } = readChannelToolWrapper()
-  console.log(`[read_channel] ${broadcasts.length} broadcasts loaded`)
+  const { messages } = readChannelToolWrapper()
+  console.log(`[read_channel] ${messages.length} channel messages loaded`)
 
   console.log(`[Gov Agent] ${fakeGovernmentResources.length} resource agents will be initialized`)
   console.log()
@@ -36,14 +36,14 @@ async function main() {
   console.log()
 
   console.log('[Gov Agent] Running match pipeline...\n')
-  const results = await runGovAgentPipeline(resourceAgents, broadcasts)
+  const results = await runGovAgentPipeline(resourceAgents, messages)
 
   console.log('\n=== Pipeline Results ===\n')
   console.log(`Total matches: ${results.length}\n`)
 
   for (const result of results) {
     console.log(`--- Match ---`)
-    console.log(`User:     ${result.assessment.broadcast.displayName} (${result.assessment.broadcast.uid})`)
+    console.log(`User:     ${result.assessment.channelMessage.uid}`)
     console.log(`Resource: ${result.assessment.resource.name} (${result.assessment.resource.rid})`)
     console.log(`Score:    ${result.assessment.decision?.score ?? 'N/A'}`)
     console.log(`Reason:   ${result.assessment.decision?.reason ?? 'N/A'}`)

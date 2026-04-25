@@ -47,11 +47,10 @@ export interface PeerPreview {
 // Central Channel  (Firebase Realtime DB — ephemeral)
 // ---------------------------------------------------------------------------
 
-export interface ChannelBroadcast {
+export interface ChannelMessage {
+  msgId: string
   uid: string
-  displayName: string
   summary: string
-  needs: string[]
   publishedAt: number // unix ms
 }
 

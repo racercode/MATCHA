@@ -3,7 +3,7 @@
 ## What's done
 
 ### `packages/shared-types`
-- All shared interfaces defined and compiled: `AuthUser`, `UserPersona`, `AgentThread`, `ThreadMessage`, `GovernmentResource`, `PeerPreview`, `ChannelBroadcast`, `SwipeCard`, `GovStats`
+- All shared interfaces defined and compiled: `AuthUser`, `UserPersona`, `AgentThread`, `ThreadMessage`, `GovernmentResource`, `PeerPreview`, `ChannelMessage`, `SwipeCard`, `GovStats`
 - `ClientEvent` and `ServerEvent` union types (full WS contract)
 - `AgentThread.govStaffUid?: string` — tracks which gov staff UID joined a thread (needed for WS delivery)
 - `ClientEvent` includes `subscribe_thread` / `unsubscribe_thread`
@@ -108,7 +108,7 @@ Fully functional for Group A/B to develop against:
 - [ ] REST thread routes → Firestore reads
 
 ### Later
-- [ ] BullMQ fan-out queue for Gov Agent (one job per broadcast entry × resource)
+- [ ] BullMQ fan-out queue for Gov Agent (one job per channel message × resource)
 - [ ] FCM push on `match_notify` / `peer_notify`
 - [ ] Pinecone embeddings for peer matching (`search_peers` tool)
 - [ ] Gov dashboard aggregation queries
