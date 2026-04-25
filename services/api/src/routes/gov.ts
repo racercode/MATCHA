@@ -12,7 +12,7 @@ router.get('/gov/resources', async (req, res) => {
 
 router.post('/gov/resources', async (req, res) => {
   const { uid, agencyId } = req as AuthedRequest
-  const { name, description, eligibilityCriteria, tags, contactUrl } = req.body
+  const { name, description, eligibilityCriteria, contactUrl } = req.body
   if (!name || !description || !eligibilityCriteria) {
     res.status(400).json({ success: false, error: '缺少必要欄位', data: null })
     return
@@ -23,7 +23,6 @@ router.post('/gov/resources', async (req, res) => {
     agencyId,
     agencyName: '', // TODO: fetch from agency profile
     name, description, eligibilityCriteria,
-    tags: tags ?? [],
     contactUrl,
     createdAt: Date.now(),
   }
@@ -48,7 +47,6 @@ router.get('/gov/dashboard', async (req, res) => {
       humanTakeoverCount: 0,
       activeThreads: 0,
       matchedToday: 0,
-      tagDistribution: {},
       needsDistribution: {},
     },
   })

@@ -115,6 +115,32 @@ Tool Wrapper 負責：
 - 每個 tool wrapper 都可以獨立測試與除錯
 - Claude Managed Agent 可以專注在「何時呼叫哪個能力」與「如何解讀結果」
 
+### 3.2 Resource-scoped Agent 原則
+
+Gov Agent 的執行單位應該是「單一政府資源」，不是「一個機關代理所有資源」。
+
+也就是：
+
+```txt
+rid-youth-career-001 Resource Agent
+  -> 只能讀取青年職涯探索諮詢
+
+rid-design-intern-002 Resource Agent
+  -> 只能讀取創意產業實習媒合計畫
+
+rid-youth-startup-003 Resource Agent
+  -> 只能讀取青年創業輔導與貸款說明
+```
+
+多個 Resource Agent 可以共用同一批 Markdown Skills 與 custom tools，但 custom tool wrapper 必須根據 runtime context 或 registry 限制資料範圍。Agent 不應該自己傳入 `resourceId` 來決定要讀哪個資源；後端應該用 `sessionId -> resourceId` 的 mapping 判斷這個 agent 能看到哪份資源。
+
+核心原則：
+
+- Agent 只負責判斷「我的資源要不要媒合這個人」
+- Tool wrapper 負責 enforce「這個 agent 只能讀自己的 resource」
+- `governmentAgents.json` 記錄 resource-level agent/session 與 `resourceId` 的綁定
+- 同一個使用者可能同時被多個資源 agent 判斷適合，後續再由 threshold、dedupe 或 ranking 處理
+
 ## 4. 會用到的 shared types
 
 目前專案的共用型別放在：
@@ -144,7 +170,6 @@ export interface ChannelBroadcast {
   uid: string
   displayName: string
   persona: string
-  tags: string[]
   needs: string[]
   publishedAt: number
 }
@@ -157,7 +182,6 @@ Gov Agent 不需要知道使用者全部個資，只要讀這份摘要即可。
 - `uid`：使用者 id，之後建立 thread 時會用到
 - `displayName`：顯示名稱，demo 可以直接顯示
 - `persona`：Persona Agent 整理出的自然語言摘要
-- `tags`：結構化標籤，例如 `青年`、`就業`、`設計`
 - `needs`：使用者目前想找的幫助，例如 `職業培訓`
 - `publishedAt`：廣播時間，避免重複處理舊資料
 
@@ -173,7 +197,6 @@ export interface GovernmentResource {
   name: string
   description: string
   eligibilityCriteria: string[]
-  tags: string[]
   contactUrl?: string
   createdAt: number
 }
@@ -187,7 +210,6 @@ export interface GovernmentResource {
 - `name`：資源名稱
 - `description`：資源說明
 - `eligibilityCriteria`：申請條件或適用對象
-- `tags`：資源標籤，用於初步比對
 - `contactUrl`：申請或說明頁
 - `createdAt`：建立時間
 
@@ -262,7 +284,6 @@ export const fakeChannelBroadcasts: ChannelBroadcast[] = [
     uid: 'user-xiaoya-001',
     displayName: '小雅',
     summary: '中文系大三，對品牌設計、排版和文組轉職有興趣，目前想找實習或職涯探索資源。',
-    tags: ['青年', '文組轉職', '設計', '實習', '職涯探索'],
     needs: ['職涯諮詢', '實習媒合', '職業培訓'],
     publishedAt: Date.now() - 60_000,
   },
@@ -270,7 +291,6 @@ export const fakeChannelBroadcasts: ChannelBroadcast[] = [
     uid: 'user-ming-002',
     displayName: '阿明',
     summary: '剛退伍，想找穩定工作，對餐飲、門市和政府職訓補助有興趣。',
-    tags: ['青年', '就業', '職訓', '補助'],
     needs: ['就業輔導', '職業培訓'],
     publishedAt: Date.now() - 30_000,
   },
@@ -278,7 +298,6 @@ export const fakeChannelBroadcasts: ChannelBroadcast[] = [
     uid: 'user-lin-003',
     displayName: '小林',
     summary: '正在準備創業，想了解青年創業貸款、商業模式輔導和政府補助。',
-    tags: ['青年', '創業', '貸款', '補助'],
     needs: ['創業輔導', '資金補助'],
     publishedAt: Date.now() - 10_000,
   },
@@ -298,7 +317,6 @@ export const fakeGovernmentResources: GovernmentResource[] = [
     name: '青年職涯探索諮詢',
     description: '提供青年職涯方向探索、履歷健檢、面試準備與一對一職涯諮詢。',
     eligibilityCriteria: ['設籍或就學就業於臺北市', '年齡 18 至 35 歲青年', '對職涯方向或轉職有諮詢需求'],
-    tags: ['青年', '職涯探索', '就業', '諮詢'],
     contactUrl: 'https://example.gov.taipei/youth-career',
     createdAt: Date.now(),
   },
@@ -309,7 +327,6 @@ export const fakeGovernmentResources: GovernmentResource[] = [
     name: '創意產業實習媒合計畫',
     description: '媒合對設計、品牌、內容企劃有興趣的青年進入創意產業實習。',
     eligibilityCriteria: ['大專院校學生或畢業三年內青年', '對設計、品牌、內容產業有興趣', '可投入至少兩個月實習'],
-    tags: ['青年', '設計', '實習', '品牌', '職涯探索'],
     contactUrl: 'https://example.gov.taipei/design-intern',
     createdAt: Date.now(),
   },
@@ -320,7 +337,6 @@ export const fakeGovernmentResources: GovernmentResource[] = [
     name: '青年創業輔導與貸款說明',
     description: '提供青年創業前期諮詢、商業模式輔導、創業貸款說明與補助資訊。',
     eligibilityCriteria: ['年齡 20 至 45 歲', '有創業構想或已成立公司', '需要資金、商業模式或法規諮詢'],
-    tags: ['青年', '創業', '貸款', '補助', '諮詢'],
     contactUrl: 'https://example.gov.taipei/startup',
     createdAt: Date.now(),
   },
@@ -754,16 +770,17 @@ read_channel skill -> MCP tool -> Firebase Realtime DB
 
 #### `query_program_docs`
 
-用途：查詢本機關或指定資源的政府方案資料。
+用途：查詢這個 Resource Agent 綁定的單一政府方案資料。
 
 Input：
 
 ```ts
 interface QueryProgramDocsInput {
-  agencyId: string
-  resourceId?: string
+  includeDetails?: boolean
 }
 ```
+
+`agencyId` 與 `resourceId` 不由 Agent input 決定。後端在處理 custom tool event 時，應該從 runtime context 或 registry 取得這個 session 綁定的 `resourceId`，並只回傳該資源。
 
 Output：
 
@@ -1294,7 +1311,7 @@ services/api/src/agent/general/
 └── agentRegistry.ts
 ```
 
-`governmentAgents.json` 保存目前有哪些政府 Agent：
+`governmentAgents.json` 保存目前有哪些政府 Resource Agent。每筆 record 應該綁定一個 `resourceId`：
 
 ```json
 {
@@ -1302,6 +1319,8 @@ services/api/src/agent/general/
     {
       "agencyId": "taipei-youth-dept",
       "agencyName": "臺北市青年局",
+      "resourceId": "rid-design-intern-002",
+      "resourceName": "創意產業實習媒合計畫",
       "agentId": "agent_xxx",
       "environmentId": "env_xxx",
       "model": "claude-haiku-4-5",
@@ -1309,7 +1328,7 @@ services/api/src/agent/general/
         {
           "key": "default",
           "sessionId": "session_xxx",
-          "title": "MATCHA Gov Agent Session (taipei-youth-dept:default)",
+          "title": "MATCHA Gov Resource Agent Session (taipei-youth-dept:rid-design-intern-002:default)",
           "createdAt": 1710000000000,
           "updatedAt": 1710000000000
         }
@@ -1341,9 +1360,10 @@ services/api/src/agent/general/
 重用流程：
 
 ```txt
-initGovManagedAgentSession(agencyId)
+initGovManagedAgentSession(agencyId, resourceId)
   -> read governmentAgents.json
-  -> if agentId + environmentId + sessionId exist: reuse sessionId
+  -> find record where agencyId + resourceId match
+  -> if agentId + environmentId + sessionId exist for this resource: reuse sessionId
   -> if agentId missing: create Claude Agent and save agentId
   -> if environmentId missing: create Environment and save environmentId
   -> if session missing: create Session and save sessionId
@@ -1352,14 +1372,14 @@ initGovManagedAgentSession(agencyId)
 Phase 1 使用 JSON registry：
 
 ```txt
-governmentAgents.json -> long-lived gov agent registry
+governmentAgents.json -> long-lived gov resource agent registry
 userAgents.json       -> long-lived user agent registry
 ```
 
 後續正式版可以替換為：
 
 ```txt
-Redis key: session:gov_agent:{agencyId}
+Redis key: session:gov_agent:{agencyId}:{resourceId}
 Firestore collection: agent_registry
 ```
 

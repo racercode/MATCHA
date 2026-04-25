@@ -9,6 +9,7 @@ import { fakeChannelBroadcasts, fakeGovernmentResources } from './fakeData.js'
 import { readChannelToolWrapper } from './toolWrappers/index.js'
 import { initGovManagedAgentSession } from './managedAgent.js'
 import { runGovAgentPipeline } from './pipeline.js'
+import type { GovernmentResource } from '@matcha/shared-types'
 
 async function main() {
   console.log('=== MATCHA Gov Agent Pipeline (Phase 1) ===\n')
@@ -16,17 +17,26 @@ async function main() {
   const { broadcasts } = readChannelToolWrapper()
   console.log(`[read_channel] ${broadcasts.length} broadcasts loaded`)
 
-  console.log('[Gov Agent] Resources will be loaded by the agent via custom tools')
+  console.log(`[Gov Agent] ${fakeGovernmentResources.length} resource agents will be initialized`)
   console.log()
 
-  console.log('[Gov Agent] Initializing Claude Managed Agent session...')
-  const sessionId = await initGovManagedAgentSession({
-    sessionKey: `run-${Date.now()}`,
-  })
+  console.log('[Gov Agent] Initializing Claude Managed Agent sessions...')
+  const runKey = `run-${Date.now()}`
+  const resourceAgents: Array<{ sessionId: string; resource: GovernmentResource }> = []
+  for (const resource of fakeGovernmentResources) {
+    const sessionId = await initGovManagedAgentSession({
+      agencyId: resource.agencyId,
+      agencyName: resource.agencyName,
+      resourceId: resource.rid,
+      resourceName: resource.name,
+      sessionKey: runKey,
+    })
+    resourceAgents.push({ sessionId, resource })
+  }
   console.log()
 
   console.log('[Gov Agent] Running match pipeline...\n')
-  const results = await runGovAgentPipeline(sessionId, broadcasts, fakeGovernmentResources)
+  const results = await runGovAgentPipeline(resourceAgents, broadcasts)
 
   console.log('\n=== Pipeline Results ===\n')
   console.log(`Total matches: ${results.length}\n`)

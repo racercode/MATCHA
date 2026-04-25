@@ -1,6 +1,6 @@
 # Gov Agent
 
-政府資源媒合 Agent，由 Claude Managed Agent 驅動。後端在 channel 更新時喚醒 Gov Agent；Agent 依照上傳的 Markdown Skills 自主呼叫 custom tools 讀資料、查資源、決定是否建立 draft thread 與第一則 `ThreadMessage`。
+政府資源媒合 Agent，由 Claude Managed Agent 驅動。每個政府資源可以有自己的 resource-scoped Agent；後端在 channel 更新時喚醒各資源 Agent，Agent 依照上傳的 Markdown Skills 自主呼叫 custom tools 讀資料、查自己的資源、決定是否建立 draft thread 與第一則 `ThreadMessage`。
 
 ## 前置需求
 
@@ -68,9 +68,9 @@ npm run gov:run
 
 執行後會：
 1. 載入 3 筆假 persona 廣播和 3 筆假政府資源
-2. 讀取 `general/governmentAgents.json`，重用或建立 Claude Managed Agent session（claude-haiku-4-5）
+2. 讀取 `general/governmentAgents.json`，依每個 `resourceId` 重用或建立 Claude Managed Agent session（claude-haiku-4-5）
 3. 建立/更新 agent 時上傳 Markdown Skills，並註冊 custom tools
-4. 對每筆 channel update 喚醒 Gov Agent
+4. 對每筆 channel update 喚醒每個 Resource Agent
 5. Agent 自主呼叫 `read_channel`、`query_program_docs`、`propose_match`
 6. Agent 回傳 match 結果或 `null`
 
@@ -85,10 +85,10 @@ npm run gov:run
 
 **Custom Tools** 是 Claude Managed Agent 可自主呼叫的工具介面。Agent 呼叫 custom tool 時，後端收到 `agent.custom_tool_use` event，執行對應 tool wrapper，再用 `user.custom_tool_result` 回傳結果。
 
-**Tool Wrappers** 是 TypeScript 執行層。目前讀假資料，之後改接 Firebase、MCP 或外部 API 時，custom tool schema 不用改。
+**Tool Wrappers** 是 TypeScript 執行層。目前讀假資料，之後改接 Firebase、MCP 或外部 API 時，custom tool schema 不用改。`query_program_docs` 會依 runtime context 只回傳該 Agent 綁定的單一 `resourceId`。
 
-**Pipeline** 負責在 channel 更新時喚醒 Gov Agent，處理 custom tool events，並接收 Agent 最終回傳的 match result 或 `null`。
+**Pipeline** 負責在 channel 更新時逐一喚醒 Resource Agent，處理 custom tool events，並接收 Agent 最終回傳的 match result 或 `null`。
 
 **ThreadMessage** 是交給 User Agent 的內容來源。Gov Agent 建立媒合後不直接通知使用者，而是產生 initial `ThreadMessage`；後續由 User Agent 讀取 message，整理成通知或 App 內摘要給使用者。
 
-**Managed Agent Registry** 記錄可重用的 Claude `agentId`、`environmentId` 和 `sessionId`。同一個政府機關預設重用同一組 Managed Agent 資源，避免每次執行都建立新的 agent / environment / session。
+**Managed Agent Registry** 記錄可重用的 Claude `agentId`、`environmentId`、`sessionId` 與綁定的 `resourceId`。同一個政府資源預設重用同一組 Managed Agent 資源，避免每次執行都建立新的 agent / environment / session。

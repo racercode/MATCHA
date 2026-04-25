@@ -49,15 +49,15 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 | Tool wrapper | 檔案 | 說明 |
 |--------------|------|------|
 | `readChannelToolWrapper` | `toolWrappers/readChannel.ts` | 回傳 persona 廣播（支援 `since` 和 `limit` 篩選） |
-| `queryProgramDocsToolWrapper` | `toolWrappers/queryProgramDocs.ts` | 依 `agencyId` 篩選資源（可選 `resourceId`） |
+| `queryProgramDocsToolWrapper` | `toolWrappers/queryProgramDocs.ts` | 依 runtime `agencyId/resourceId` context 只回傳此 Resource Agent 綁定的資源 |
 | `proposeMatchToolWrapper` | `toolWrappers/proposeMatch.ts` | 根據 `MatchAssessment` 建立 draft `AgentThread` 與 initial `ThreadMessage` |
 
 ### Managed Agent（`managedAgent.ts`）
 
 - 初始化 Anthropic client
 - 讀取 `services/api/src/agent/general/governmentAgents.json`
-- 重用既有 Claude Managed Agent / environment / session
-- 若 registry 沒有資料，才建立 Claude Managed Agent，使用 `claude-haiku-4-5`
+- 依 `resourceId` 重用既有 Claude Managed Agent / environment / session
+- 若 registry 沒有該資源的資料，才建立 Claude Managed Agent，使用 `claude-haiku-4-5`
 - 上傳 Markdown Skills，並將 skill IDs 掛到 agent
 - 註冊 `read_channel`、`query_program_docs`、`propose_match` custom tools
 - 建立或重用 environment 和 session
@@ -69,7 +69,7 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 
 | 檔案 | 用途 |
 |------|------|
-| `general/governmentAgents.json` | 保存政府 Agent 的 `agentId`、`environmentId`、sessions |
+| `general/governmentAgents.json` | 保存政府 Resource Agent 的 `resourceId`、`agentId`、`environmentId`、sessions |
 | `general/userAgents.json` | 保存使用者 Agent 的 `agentId`、`environmentId`、sessions |
 
 `agentRegistry.ts` 負責讀寫這兩個 JSON。Phase 1 先用 JSON，後續可以換 Redis / Firestore。
@@ -77,15 +77,15 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 ### Pipeline（`pipeline.ts`）
 
 - `parseMatchDecision(rawText)` — 驗證並解析 Claude 的 JSON 回應，自動清除 markdown code fence
-- `runGovAgentForChannelUpdate(sessionId, broadcast, agencyId?)` — channel 更新時喚醒 Gov Agent，讓 Agent 自主使用 custom tools，最後回傳 match result 或 `null`
-- `runGovAgentPipeline(sessionId, broadcasts, resources, threshold?)` — 對每筆 channel update 呼叫 Gov Agent，收集有回應的結果
+- `runGovAgentForChannelUpdate(sessionId, broadcast, context)` — channel 更新時喚醒單一 Resource Agent，讓 Agent 自主使用 custom tools，最後回傳 match result 或 `null`
+- `runGovAgentPipeline(resourceAgents, broadcasts, threshold?)` — 對每筆 channel update 逐一呼叫各 Resource Agent，收集有回應的結果
 
 ### 測試進入點（`main.ts`）
 
 執行腳本，流程：
 1. 透過 `readChannelToolWrapper` 載入假廣播
-2. 從 registry 重用或初始化 Claude Managed Agent session
-3. 對每筆 channel update 喚醒 Gov Agent
+2. 從 registry 依每個 resource 重用或初始化 Claude Managed Agent session
+3. 對每筆 channel update 逐一喚醒 Resource Agent
 4. Agent 自主呼叫 custom tools
 5. 印出可讀的結果和完整 JSON，包含 `AgentThread` 與 initial `ThreadMessage`
 
@@ -94,7 +94,7 @@ Tool wrapper 是 TypeScript 執行層，目前底層讀假資料或建立 draft 
 4 個 suite、19 個測試，涵蓋：
 - `parseMatchDecision` — 合法 JSON、markdown fence 清除、所有驗證錯誤情境
 - `readChannelToolWrapper` — 無篩選、since 篩選、limit 限制
-- `queryProgramDocsToolWrapper` — 已知 agencyId、未知 agencyId、resourceId 篩選
+- `queryProgramDocsToolWrapper` — runtime context resource scoping、未知 context、忽略 agent input 裡的 resourceId
 - `proposeMatchToolWrapper` — thread / initial message 資料結構、deterministic tid / mid
 
 ## 架構流程

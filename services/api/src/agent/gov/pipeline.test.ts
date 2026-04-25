@@ -123,21 +123,28 @@ describe('readChannelToolWrapper', () => {
 // ---------------------------------------------------------------------------
 
 describe('queryProgramDocsToolWrapper', () => {
-  it('returns resources for known agencyId', () => {
-    const { resources } = queryProgramDocsToolWrapper({ agencyId: 'taipei-youth-dept' })
-    assert.equal(resources.length, 3)
-    for (const r of resources) {
-      assert.equal(r.agencyId, 'taipei-youth-dept')
-    }
+  it('returns only the resource bound to the runtime context', () => {
+    const { resources } = queryProgramDocsToolWrapper({}, {
+      agencyId: 'taipei-youth-dept',
+      resourceId: 'rid-youth-career-001',
+    })
+    assert.equal(resources.length, 1)
+    assert.equal(resources[0].agencyId, 'taipei-youth-dept')
+    assert.equal(resources[0].rid, 'rid-youth-career-001')
   })
 
-  it('returns empty for unknown agencyId', () => {
-    const { resources } = queryProgramDocsToolWrapper({ agencyId: 'nonexistent' })
+  it('returns empty for unknown runtime context', () => {
+    const { resources } = queryProgramDocsToolWrapper({}, {
+      agencyId: 'nonexistent',
+      resourceId: 'rid-youth-career-001',
+    })
     assert.equal(resources.length, 0)
   })
 
-  it('filters by resourceId', () => {
+  it('ignores any resourceId supplied by the agent input', () => {
     const { resources } = queryProgramDocsToolWrapper({
+      resourceId: 'rid-youth-startup-003',
+    } as never, {
       agencyId: 'taipei-youth-dept',
       resourceId: 'rid-youth-career-001',
     })

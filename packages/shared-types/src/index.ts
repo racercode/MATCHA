@@ -30,7 +30,6 @@ export interface UserPersona {
   displayName: string
   photoURL?: string
   summary: string    // agent-maintained natural language summary
-  tags: string[]     // structured tags for matching and coffee chat
   needs: string[]    // what the user is seeking
   offers: string[]   // what the user can share (coffee chat)
   updatedAt: number  // unix ms
@@ -42,8 +41,6 @@ export interface PeerPreview {
   displayName: string
   photoURL?: string
   summary: string
-  tags: string[]
-  commonTags: string[] // intersection with viewer's tags
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +51,6 @@ export interface ChannelBroadcast {
   uid: string
   displayName: string
   summary: string
-  tags: string[]
   needs: string[]
   publishedAt: number // unix ms
 }
@@ -70,7 +66,6 @@ export interface GovernmentResource {
   name: string
   description: string
   eligibilityCriteria: string[]
-  tags: string[]
   contactUrl?: string
   createdAt: number
 }
@@ -89,7 +84,7 @@ export type ThreadStatus =
 
 // 'agent'  — only the agent is active on this side
 // 'human'  — human has joined, agent goes passive
-// 'both'   — human joined but agent may still assist if tagged
+// 'both'   — human joined but agent may still assist when needed
 export type PresenceState = 'agent' | 'human' | 'both'
 
 export interface AgentThread {
@@ -199,7 +194,6 @@ export interface GovStats {
   humanTakeoverCount: number
   activeThreads: number
   matchedToday: number
-  tagDistribution: Record<string, number>    // tag → count
   needsDistribution: Record<string, number>  // need category → count
 }
 
@@ -211,7 +205,6 @@ export const MOCK_PERSONA: UserPersona = {
   uid: 'mock-uid-001',
   displayName: '陳小明',
   summary: '正在尋找就業輔導和職業培訓資源的年輕人',
-  tags: ['就業', '職訓', '青年'],
   needs: ['就業輔導', '職業培訓'],
   offers: ['軟體開發經驗', '社區志工'],
   updatedAt: Date.now(),
@@ -224,7 +217,6 @@ export const MOCK_RESOURCE: GovernmentResource = {
   name: '青年就業促進計畫',
   description: '提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢',
   eligibilityCriteria: ['年齡 18–29 歲', '具中華民國國籍', '非在學中'],
-  tags: ['就業', '青年', '補助'],
   contactUrl: 'https://www.mol.gov.tw',
   createdAt: Date.now(),
 }
@@ -246,6 +238,4 @@ export const MOCK_PEER_PREVIEW: PeerPreview = {
   uid: 'mock-uid-002',
   displayName: '林小華',
   summary: '對社會企業和公共政策有興趣，想找同路人交流',
-  tags: ['社會企業', '公共政策', '青年'],
-  commonTags: ['青年'],
 }

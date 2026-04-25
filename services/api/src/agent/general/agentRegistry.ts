@@ -18,6 +18,8 @@ export interface ManagedAgentSessionRecord {
 export interface GovernmentAgentRecord {
   agencyId: string
   agencyName: string
+  resourceId?: string
+  resourceName?: string
   agentId?: string
   environmentId?: string
   skillIds?: string[]
@@ -60,14 +62,19 @@ async function writeRegistry<T>(filePath: string, registry: RegistryFile<T>): Pr
   await writeFile(filePath, `${JSON.stringify(registry, null, 2)}\n`, 'utf8')
 }
 
-export async function getGovernmentAgentRecord(agencyId: string): Promise<GovernmentAgentRecord | undefined> {
+export async function getGovernmentAgentRecord(
+  agencyId: string,
+  resourceId?: string,
+): Promise<GovernmentAgentRecord | undefined> {
   const registry = await readRegistry<GovernmentAgentRecord>(GOVERNMENT_AGENTS_PATH)
-  return registry.agents.find(agent => agent.agencyId === agencyId)
+  return registry.agents.find(agent => agent.agencyId === agencyId && agent.resourceId === resourceId)
 }
 
 export async function upsertGovernmentAgentRecord(record: GovernmentAgentRecord): Promise<GovernmentAgentRecord> {
   const registry = await readRegistry<GovernmentAgentRecord>(GOVERNMENT_AGENTS_PATH)
-  const index = registry.agents.findIndex(agent => agent.agencyId === record.agencyId)
+  const index = registry.agents.findIndex(
+    agent => agent.agencyId === record.agencyId && agent.resourceId === record.resourceId,
+  )
   const nextRecord = { ...record, updatedAt: Date.now() }
 
   if (index >= 0) {

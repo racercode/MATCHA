@@ -7,7 +7,7 @@ router.use(verifyToken)
 router.get('/me/persona', async (req, res) => {
   const { uid } = req as AuthedRequest
   // TODO: fetch UserPersona from Firestore /personas/{uid}
-  res.json({ success: true, data: { uid, displayName: '', summary: '', tags: [], needs: [], offers: [], updatedAt: Date.now() } })
+  res.json({ success: true, data: { uid, displayName: '', summary: '', needs: [], offers: [], updatedAt: Date.now() } })
 })
 
 router.post('/me/chat', async (req, res) => {

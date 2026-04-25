@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const GOV_AGENT_MODEL = 'claude-haiku-4-5'
-const GOV_AGENT_CONFIG_VERSION = 'gov-custom-tools-v2'
+const GOV_AGENT_CONFIG_VERSION = 'gov-resource-tools-v3'
 const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 const DEFAULT_AGENCY_NAME = '臺北市青年局'
 const DEFAULT_SESSION_KEY = 'default'
@@ -31,7 +31,7 @@ const client = new Anthropic({
 export { client }
 
 const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
-你的任務是在 channel 更新時，自主使用 Markdown Skills 與 custom tools 判斷是否應該主動媒合。
+你的任務是在 channel 更新時，代表單一政府資源主動判斷是否應該媒合使用者。
 
 請遵守：
 1. 不要捏造使用者沒有提供的資料。
@@ -39,9 +39,11 @@ const GOV_AGENT_SYSTEM_PROMPT = `你是 MATCHA 的 Government Resource Agent。
 3. score 必須是 0 到 100 的整數。
 4. 只有明顯值得主動推薦時 eligible 才能是 true。
 5. 需要資料時，自己呼叫 read_channel、query_program_docs、propose_match custom tools。
-6. 如果不需要回應，最後只回傳 null。
-7. 如果需要回應，請先呼叫 propose_match，最後只回傳 propose_match 的結果 JSON。
-8. 最終回應只能是 JSON 或 null，不要使用 markdown，不要加解釋文字。
+6. query_program_docs 只會回傳你這個 resource agent 被授權看到的單一政府資源。
+7. 不要嘗試查詢或媒合其他 resourceId。
+8. 如果不需要回應，最後只回傳 null。
+9. 如果需要回應，請先呼叫 propose_match，最後只回傳 propose_match 的結果 JSON。
+10. 最終回應只能是 JSON 或 null，不要使用 markdown，不要加解釋文字。
 
 回應 JSON 格式：
 {
@@ -66,14 +68,12 @@ const GOV_CUSTOM_TOOLS = [
   {
     name: 'query_program_docs',
     type: 'custom' as const,
-    description: 'Query government resources for an agency, optionally scoped to one resource. Use before evaluating eligibility or fit.',
+    description: 'Query the single government resource bound to this resource agent. Use before evaluating eligibility or fit.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        agencyId: { type: 'string', description: 'Government agency id.' },
-        resourceId: { type: 'string', description: 'Optional resource id.' },
+        includeDetails: { type: 'boolean', description: 'Optional. Return full resource details when available.' },
       },
-      required: ['agencyId'],
     },
   },
   {
@@ -121,7 +121,7 @@ async function findExistingSkills(): Promise<Map<string, string>> {
 }
 
 async function createGovSkill(skillName: string, existing: Map<string, string>): Promise<string> {
-  const displayTitle = `MATCHA Gov ${skillName}`
+  const displayTitle = `MATCHA Gov ${skillName} (${GOV_AGENT_CONFIG_VERSION})`
   const existingId = existing.get(displayTitle)
   if (existingId) {
     return existingId
@@ -167,21 +167,30 @@ function isRecordReusable(record: GovernmentAgentRecord, sessionKey: string): bo
 export interface InitGovManagedAgentSessionOptions {
   agencyId?: string
   agencyName?: string
+  resourceId?: string
+  resourceName?: string
   sessionKey?: string
 }
 
 export async function initGovManagedAgentSession(options: InitGovManagedAgentSessionOptions = {}): Promise<string> {
   const agencyId = options.agencyId ?? DEFAULT_AGENCY_ID
   const agencyName = options.agencyName ?? DEFAULT_AGENCY_NAME
+  const resourceId = options.resourceId
+  const resourceName = options.resourceName
   const sessionKey = options.sessionKey ?? DEFAULT_SESSION_KEY
   const now = Date.now()
+  const agentScope = resourceId ? `${agencyId}:${resourceId}` : agencyId
+  const agentScopeSlug = agentScope.replace(/[^a-zA-Z0-9-_]/g, '-')
+  const displayName = resourceName ? `${resourceName} (${resourceId})` : agentScope
 
-  let record = await getGovernmentAgentRecord(agencyId)
+  let record = await getGovernmentAgentRecord(agencyId, resourceId)
 
   if (!record) {
     record = {
       agencyId,
       agencyName,
+      resourceId,
+      resourceName,
       model: GOV_AGENT_MODEL,
       sessions: [],
       createdAt: now,
@@ -212,7 +221,7 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
   let agentId = record.agentId
   if (!agentId) {
     const agent = await client.beta.agents.create({
-      name: `MATCHA Gov Match Agent (${agencyId})`,
+      name: `MATCHA Gov Resource Agent (${displayName})`,
       model: GOV_AGENT_MODEL,
       system: GOV_AGENT_SYSTEM_PROMPT,
       skills: toSkillParams(skillIds),
@@ -225,7 +234,7 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
       ],
     })
     agentId = agent.id
-    console.log(`[Gov Agent] Agent created: ${agentId}`)
+    console.log(`[Gov Agent] Agent created for ${agentScope}: ${agentId}`)
   } else {
     const agent = await client.beta.agents.retrieve(agentId)
     await client.beta.agents.update(agentId, {
@@ -241,33 +250,35 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
         },
       ],
     })
-    console.log(`[Gov Agent] Agent updated with skills/tools: ${agentId}`)
+    console.log(`[Gov Agent] Agent updated with skills/tools for ${agentScope}: ${agentId}`)
   }
 
   let environmentId = record.environmentId
   if (!environmentId) {
     const environment = await client.beta.environments.create({
-      name: `matcha-gov-agent-env-${agencyId}`,
+      name: `matcha-gov-agent-env-${agentScopeSlug}`,
       config: {
         type: 'cloud',
         networking: { type: 'unrestricted' },
       },
     })
     environmentId = environment.id
-    console.log(`[Gov Agent] Environment created: ${environmentId}`)
+    console.log(`[Gov Agent] Environment created for ${agentScope}: ${environmentId}`)
   } else {
-    console.log(`[Gov Agent] Reusing environment: ${environmentId}`)
+    console.log(`[Gov Agent] Reusing environment for ${agentScope}: ${environmentId}`)
   }
 
   const session = await client.beta.sessions.create({
     agent: agentId,
     environment_id: environmentId,
-    title: `MATCHA Gov Agent Session (${agencyId}:${sessionKey})`,
+    title: `MATCHA Gov Resource Agent Session (${agentScope}:${sessionKey})`,
   })
 
   const nextRecord: GovernmentAgentRecord = {
     ...record,
     agencyName,
+    resourceId,
+    resourceName,
     agentId,
     environmentId,
     skillIds,
@@ -276,7 +287,7 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
     sessions: upsertSession(record.sessions, {
       key: sessionKey,
       sessionId: session.id,
-      title: `MATCHA Gov Agent Session (${agencyId}:${sessionKey})`,
+      title: `MATCHA Gov Resource Agent Session (${agentScope}:${sessionKey})`,
       createdAt: now,
       updatedAt: now,
     }),
@@ -285,6 +296,6 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
 
   await upsertGovernmentAgentRecord(nextRecord)
 
-  console.log(`[Gov Agent] Session created: ${session.id}`)
+  console.log(`[Gov Agent] Session created for ${agentScope}: ${session.id}`)
   return session.id
 }

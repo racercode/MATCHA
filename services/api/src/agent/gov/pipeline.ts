@@ -5,6 +5,7 @@ import {
   queryProgramDocsToolWrapper,
   readChannelToolWrapper,
 } from './toolWrappers/index.js'
+import type { GovToolRuntimeContext } from './toolWrappers/index.js'
 import type { MatchDecision, MatchAssessment, GovAgentPipelineResult } from './types.js'
 
 export function parseMatchDecision(rawText: string): MatchDecision {
@@ -34,14 +35,25 @@ export function parseMatchDecision(rawText: string): MatchDecision {
   return parsed
 }
 
-async function executeGovCustomTool(name: string, input: Record<string, unknown>) {
+async function executeGovCustomTool(
+  name: string,
+  input: Record<string, unknown>,
+  context: GovToolRuntimeContext,
+) {
   switch (name) {
     case 'read_channel':
       return readChannelToolWrapper(input)
     case 'query_program_docs':
-      return queryProgramDocsToolWrapper(input as { agencyId: string; resourceId?: string })
-    case 'propose_match':
-      return proposeMatchToolWrapper(input as { assessment: MatchAssessment })
+      return queryProgramDocsToolWrapper(input, context)
+    case 'propose_match': {
+      const proposeInput = input as { assessment: MatchAssessment }
+      const resource = proposeInput.assessment.resource
+      if (resource.agencyId !== context.agencyId || resource.rid !== context.resourceId) {
+        throw new Error('propose_match resource does not match this resource agent context')
+      }
+
+      return proposeMatchToolWrapper(proposeInput)
+    }
     default:
       throw new Error(`Unknown Gov Agent custom tool: ${name}`)
   }
@@ -69,7 +81,7 @@ function parseGovAgentFinalResponse(rawText: string): GovAgentPipelineResult | n
 export async function runGovAgentForChannelUpdate(
   sessionId: string,
   broadcast: ChannelBroadcast,
-  agencyId = 'taipei-youth-dept',
+  context: GovToolRuntimeContext & { resourceName?: string },
 ): Promise<GovAgentPipelineResult | null> {
   const stream = await client.beta.sessions.events.stream(sessionId)
 
@@ -85,11 +97,14 @@ export async function runGovAgentForChannelUpdate(
               instructions: [
                 'A new ChannelBroadcast was published.',
                 'Use read_channel if you need recent channel context.',
-                'Use query_program_docs to inspect government resources for the agency.',
-                'If no government resource should respond, final answer must be null.',
+                'Use query_program_docs to inspect the single government resource bound to this resource agent.',
+                'Evaluate only this bound resource. Do not ask for or propose another resource.',
+                'If this resource should not respond, final answer must be null.',
                 'If a match should be proposed, call propose_match first, then final answer must be the propose_match result JSON.',
               ],
-              agencyId,
+              agencyId: context.agencyId,
+              resourceId: context.resourceId,
+              resourceName: context.resourceName,
               channelBroadcast: broadcast,
             }),
           },
@@ -105,7 +120,7 @@ export async function runGovAgentForChannelUpdate(
     if (event.type === 'agent.custom_tool_use') {
       console.log(`  [tool] ${event.name} called`, JSON.stringify(event.input).slice(0, 200))
       try {
-        const toolResult = await executeGovCustomTool(event.name, event.input)
+        const toolResult = await executeGovCustomTool(event.name, event.input, context)
         if (event.name === 'propose_match') {
           const result = toolResult as Omit<GovAgentPipelineResult, 'assessment'> & { thread: GovAgentPipelineResult['thread'] }
           const assessment = (event.input as { assessment: MatchAssessment }).assessment
@@ -163,9 +178,8 @@ export async function runGovAgentForChannelUpdate(
 }
 
 export async function runGovAgentPipeline(
-  sessionId: string,
+  resourceAgents: Array<{ sessionId: string; resource: GovernmentResource }>,
   broadcasts: ChannelBroadcast[],
-  _resources: GovernmentResource[],
   threshold = 70,
 ): Promise<GovAgentPipelineResult[]> {
   const results: GovAgentPipelineResult[] = []
@@ -173,15 +187,23 @@ export async function runGovAgentPipeline(
   for (const broadcast of broadcasts) {
     console.log(`[Gov Agent] Channel update: ${broadcast.displayName}`)
 
-    const result = await runGovAgentForChannelUpdate(sessionId, broadcast)
-    if (!result) {
-      console.log('  -> No match proposed')
-    } else if ((result.assessment.decision?.score ?? 0) < threshold) {
-      console.log(`  -> Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
-    } else {
-      results.push(result)
-      console.log(`  -> Thread created: ${result.thread.tid}`)
-      console.log(`  -> Initial message created: ${result.initialMessage.mid}`)
+    for (const { sessionId, resource } of resourceAgents) {
+      console.log(`  [Resource Agent] ${resource.name} (${resource.rid})`)
+      const result = await runGovAgentForChannelUpdate(sessionId, broadcast, {
+        agencyId: resource.agencyId,
+        resourceId: resource.rid,
+        resourceName: resource.name,
+      })
+
+      if (!result) {
+        console.log('  -> No match proposed')
+      } else if ((result.assessment.decision?.score ?? 0) < threshold) {
+        console.log(`  -> Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
+      } else {
+        results.push(result)
+        console.log(`  -> Thread created: ${result.thread.tid}`)
+        console.log(`  -> Initial message created: ${result.initialMessage.mid}`)
+      }
     }
   }
 

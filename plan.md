@@ -123,7 +123,6 @@ interface UserPersona {
   uid: string
   displayName: string
   summary: string          // Agent 維護的自然語言摘要
-  tags: string[]           // 結構化標籤，供 Gov Agent 快速過濾
   updatedAt: Timestamp
 }
 ```
@@ -133,7 +132,6 @@ interface UserPersona {
 interface ChannelBroadcast {
   uid: string
   summary: string
-  tags: string[]
   publishedAt: number      // unix ms
 }
 ```
@@ -174,7 +172,6 @@ interface GovernmentResource {
   name: string
   description: string
   eligibilityCriteria: string[]
-  tags: string[]
   contactUrl?: string
 }
 ```
@@ -232,7 +229,7 @@ TTL:        24h sliding
 
 | Skill | 說明 |
 |-------|------|
-| `search_peers` | 以 tags 查 Firestore 找相似用戶 |
+| `search_peers` | 依 persona 摘要與需求查 Firestore 找相似用戶 |
 | `propose_peer_match` | 建立 user_user AgentThread |
 | `open_chat` | 啟動雙方對話 |
 | `request_human_review` | 同上 |
@@ -255,7 +252,7 @@ userPresence / govPresence 各自獨立追蹤
 └─────────────────┴──────────────────┴─────────────────────────────┘
 
 任一方真人加入 → 對應 Agent 進入被動模式
-雙方都是真人 → Agent 完全靜音（除非被 @tag）
+雙方都是真人 → Agent 完全靜音
 ```
 
 ---
@@ -362,7 +359,7 @@ Group A
 Group B
 ├── AM-早：切換到真實後端
 │          Thread 詳情 — presence badge、承辦人介入按鈕
-├── AM-晚：Gov dashboard 統計頁（媒合數、真人介入率、tag 分佈）
+├── AM-晚：Gov dashboard 統計頁（媒合數、真人介入率、需求分佈）
 └── PM：UI polish、Demo flow 走一遍
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Demo Prep ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

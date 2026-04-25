@@ -106,7 +106,6 @@ Firestore /gov_staff/{uid} 存在？
     "displayName": "陳小明",
     "photoURL": "https://...",
     "summary": "正在尋找就業輔導和職業培訓資源的年輕人",
-    "tags": ["就業", "職訓", "青年"],
     "needs": ["就業輔導", "職業培訓"],
     "offers": ["軟體開發經驗", "社區志工"],
     "updatedAt": 1714000000000
@@ -380,7 +379,6 @@ data: {"type":"agent_reply","content":"","done":true}
         "name": "青年就業促進計畫",
         "description": "提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢",
         "eligibilityCriteria": ["年齡 18–29 歲", "具中華民國國籍", "非在學中"],
-        "tags": ["就業", "青年", "補助"],
         "contactUrl": "https://www.mol.gov.tw",
         "createdAt": 1714000000000
       }
@@ -404,7 +402,6 @@ data: {"type":"agent_reply","content":"","done":true}
   "name": "青年就業促進計畫",
   "description": "提供 18–29 歲青年就業媒合、職訓補助與職涯諮詢",
   "eligibilityCriteria": ["年齡 18–29 歲", "具中華民國國籍", "非在學中"],
-  "tags": ["就業", "青年", "補助"],
   "contactUrl": "https://www.mol.gov.tw"
 }
 ```
@@ -420,7 +417,6 @@ data: {"type":"agent_reply","content":"","done":true}
     "name": "青年就業促進計畫",
     "description": "...",
     "eligibilityCriteria": ["..."],
-    "tags": ["就業", "青年", "補助"],
     "contactUrl": "https://www.mol.gov.tw",
     "createdAt": 1714010000000
   }
@@ -457,12 +453,6 @@ Query params 同 `GET /threads`。
     "humanTakeoverCount": 11,
     "activeThreads": 8,
     "matchedToday": 6,
-    "tagDistribution": {
-      "就業": 20,
-      "青年": 15,
-      "補助": 10,
-      "住宅": 5
-    },
     "needsDistribution": {
       "就業輔導": 18,
       "職業培訓": 14,
@@ -554,9 +544,7 @@ Header 需帶 `Authorization: Bearer <firebase_id_token>`（或 query param `?to
   "peer": {
     "uid": "uid-002",
     "displayName": "林小華",
-    "summary": "對社會企業有興趣的青年",
-    "tags": ["社會企業", "青年"],
-    "commonTags": ["青年"]
+    "summary": "對社會企業有興趣的青年"
   }
 }
 
@@ -564,7 +552,7 @@ Header 需帶 `Authorization: Bearer <firebase_id_token>`（或 query param `?to
 { "type": "presence_update", "threadId": "tid-001", "side": "user", "state": "human" }
 
 // persona_updated
-{ "type": "persona_updated", "persona": { "uid": "abc123", "tags": [...], ... } }
+{ "type": "persona_updated", "persona": { "uid": "abc123", ... } }
 
 // error
 { "type": "error", "code": "SESSION_EXPIRED", "message": "請重新登入" }
