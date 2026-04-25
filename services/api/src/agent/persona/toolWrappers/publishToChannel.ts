@@ -17,6 +17,8 @@ export async function publishToChannelToolWrapper(
     createdAt: Date.now(),
   })
 
+  console.log(`[publishToChannel] uid=${uid} msgId=${msgId} summary="${input.summary.slice(0, 80)}"`)
+
   // Fire-and-forget: trigger Coffee Agent and Gov Agent in background
   import('../../coffee/pipeline.js')
     .then(({ triggerCoffeeMatch }) => triggerCoffeeMatch(msgId))
