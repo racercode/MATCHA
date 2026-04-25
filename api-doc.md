@@ -86,10 +86,7 @@ Persona Chat 完全透過 WebSocket 進行（見 §9）。
   "data": {
     "uid": "abc123",
     "displayName": "陳小明",
-    "photoURL": "https://...",
-    "summary": "正在尋找就業輔導和職業培訓資源的年輕人",
-    "needs": ["就業輔導", "職業培訓"],
-    "offers": ["軟體開發經驗", "社區志工"],
+    "summary": "正在尋找就業輔導和職業培訓資源的年輕人，目前無穩定收入",
     "updatedAt": 1714000000000
   }
 }
@@ -571,22 +568,7 @@ interface ChannelMessage {
 }
 ```
 
-**Response `201`**
-```json
-{
-  "success": true,
-  "data": {
-    "rid": "rid-002",
-    "agencyId": "labor-dept",
-    "agencyName": "勞動部",
-    "name": "青年就業促進計畫",
-    "description": "...",
-    "eligibilityCriteria": ["..."],
-    "contactUrl": "https://www.mol.gov.tw",
-    "createdAt": 1714010000000
-  }
-}
-```
+**Response `201`** — 回傳新建 `GovernmentResource`（結構同上）。
 
 ---
 
@@ -606,15 +588,9 @@ interface ChannelMessage {
 {
   "success": true,
   "data": {
-    "totalMatches": 47,
-    "humanTakeoverCount": 11,
-    "activeThreads": 8,
-    "matchedToday": 6,
-    "needsDistribution": {
-      "就業輔導": 18,
-      "職業培訓": 14,
-      "法律協助": 7
-    }
+    "rid": "rid-001",
+    "pdfStoragePath": "gov-resources/rid-001.pdf",
+    "extractedChars": 8420
   }
 }
 ```
@@ -705,23 +681,17 @@ type ServerEvent =
 
 // 對方收到
 {
-  "type": "peer_notify",
-  "thread": { "tid": "tid-002", "type": "user_user", "status": "negotiating", ... },
-  "peer": {
-    "uid": "uid-002",
-    "displayName": "林小華",
-    "summary": "對社會企業有興趣的青年"
+  "type": "human_message",
+  "message": {
+    "mid": "hm-005",
+    "from": "user:abc123",
+    "content": "請問申請期限是何時？",
+    "createdAt": 1714005100000
   }
 }
 
-// presence_update
-{ "type": "presence_update", "threadId": "tid-001", "side": "user", "state": "human" }
-
-// persona_updated
-{ "type": "persona_updated", "persona": { "uid": "abc123", ... } }
-
-// error
-{ "type": "error", "code": "SESSION_EXPIRED", "message": "請重新登入" }
+// 錯誤
+{ "type": "error", "code": "THREAD_NOT_FOUND", "message": "Thread pt-001 不存在或無權限存取" }
 ```
 
 ---

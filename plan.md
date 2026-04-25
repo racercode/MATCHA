@@ -129,7 +129,7 @@ matcha/
 interface UserPersona {
   uid: string
   displayName: string
-  summary: string          // Agent 維護的自然語言摘要
+  summary: string          // PersonaAgent 維護的自然語言摘要
   updatedAt: Timestamp
 }
 ```
@@ -140,7 +140,7 @@ interface ChannelMessage {
   msgId: string
   uid: string              // 廣播者市民 uid
   summary: string
-  publishedAt: number      // unix ms
+  createdAt: Timestamp
 }
 ```
 
@@ -285,31 +285,9 @@ Session key: `session:coffee:{tid}`（per thread，保有雙方對話脈絡）
 
 | Skill | 說明 |
 |-------|------|
-| `search_peers` | 依 persona 摘要與需求查 Firestore 找相似用戶 |
-| `propose_peer_match` | 建立 user_user AgentThread |
-| `open_chat` | 啟動雙方對話 |
-| `request_human_review` | 同上 |
-| `summarize_thread` | 同上 |
-
----
-
-## 人工介入邏輯
-
-```
-userPresence / govPresence 各自獨立追蹤
-
-┌─────────────────┬──────────────────┬─────────────────────────────┐
-│ userPresence    │ govPresence      │ 行為                        │
-├─────────────────┼──────────────────┼─────────────────────────────┤
-│ agent           │ agent            │ 雙方 Agent 自主協商          │
-│ human           │ agent            │ 市民直接輸入，Gov Agent 回應  │
-│ agent           │ human            │ Persona Agent 回應，承辦人打字│
-│ human           │ human            │ 雙方靜音，真人直接對話        │
-└─────────────────┴──────────────────┴─────────────────────────────┘
-
-任一方真人加入 → 對應 Agent 進入被動模式
-雙方都是真人 → Agent 完全靜音
-```
+| `read_channel_messages` | 掃描近期 channel_messages，語意比對找相似 persona summary |
+| `propose_peer_match` | 建立 peer_threads 文件（雙方 HTTP polling 發現） |
+| `relay_message` | 在 peer_threads/{tid}/messages 寫入訊息，WS 推送給雙方（僅此處用 WS，是 chat 而非通知） |
 
 ---
 
@@ -395,65 +373,9 @@ GET    /gov/dashboard                      媒合統計（媒合數、matchScore
 
 | 組別 | 負責 | 主要產出 |
 |------|------|----------|
-| **Group A** | React Native 市民端 | Persona Chat、Swipe、Match Dashboard、**Coffee Chat**、通知 |
-| **Group B** | Next.js 政府端 | 資源管理、Thread 監控、統計 Dashboard、承辦人介入 |
-| **Group C** | Express 後端 + Agents | API、Persona Agent、Gov Agent、**Coffee Agent**、Firebase 整合、WebSocket |
-
----
-
-### 開發時間軸（2 天黑客松）
-
-> **核心原則：** Group C Day 1 上午鎖定 shared-types + 啟動 mock server，A/B 立刻並行開發，不等後端。
-
-```
-開賽前（自行完成）
-└── 所有人：clone monorepo、安裝 pnpm、設定環境、讀 shared-types
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Day 1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Group C【最高優先 — 上午完成才能解鎖 A/B】
-├── AM-早：確認並鎖定 shared-types/index.ts（任何改動先在群組討論）
-├── AM-早：啟動 mock server（port 3001，所有端點回假資料 + mock WS 推事件）
-├── AM-晚：Firebase 初始化、Auth middleware、Firestore CRUD helpers
-└── PM：Persona Agent 接通（Claude Sessions API + Redis session）
-     + publish_to_channel skill（Realtime DB 廣播）
-
-Group A（mock server 一上線立刻開幹）
-├── AM：Expo 專案建立 + Firebase Auth 登入頁
-├── PM-早：Persona Chat UI（WebSocket streaming 接 mock）
-└── PM-晚：Swipe UI 元件（接 mock swipe_card 事件）
-
-Group B（mock server 一上線立刻開幹）
-├── AM：Next.js 專案建立 + Firebase Auth 登入頁（gov_staff role）
-├── PM-早：Thread 列表頁 + Thread 詳情頁（接 mock REST）
-└── PM-晚：資源列表頁、新增資源表單
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Day 2 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Group C
-├── AM-早：Gov Agent 接通（read_channel → assess_fit → propose_match → FCM）
-├── AM-晚：Coffee Agent 接通（search_peers → propose_peer_match）
-│          Human intervention：presence flag 切換邏輯
-└── PM：Gov dashboard 統計 API、bug fix、協助 A/B 串接問題
-
-Group A
-├── AM-早：切換到真實後端（關掉 mock flag）
-│          Match Dashboard — gov_user thread 列表 + 真人加入按鈕
-├── AM-晚：Coffee Chat UI — peer_notify 接收、peer thread 列表
-└── PM：通知接收（FCM）、UI polish、Demo flow 走一遍
-
-Group B
-├── AM-早：切換到真實後端
-│          Thread 詳情 — presence badge、承辦人介入按鈕
-├── AM-晚：Gov dashboard 統計頁（媒合數、真人介入率、需求分佈）
-└── PM：UI polish、Demo flow 走一遍
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ Demo Prep ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-確認兩條 happy path 都能走通：
-  Path 1：登入 → 建 persona → Gov Agent 媒合 → 市民介入 → 承辦人介入 → 真人對話
-  Path 2：登入 → 建 persona → Coffee Agent 配對 → 兩位市民 Agent 協商 → 真人加入聊天
-```
+| **Group A** | React Native 市民端 | Persona Chat、Swipe、Match Inbox（channel_replies）、Coffee Chat、Human Thread |
+| **Group B** | Next.js 政府端 | 資源管理、Match Dashboard（matchScore）、開啟真人對話、Human Thread |
+| **Group C** | Fastify 後端 + Agents | API、Persona Agent、Gov Agent、Coffee Agent、Firebase 整合、WebSocket |
 
 ---
 
@@ -659,3 +581,38 @@ GOV_AGENT_ID=agent_...
 | `read_channel_messages` | Coffee | `getDocs('channel_messages', orderBy createdAt desc, limit 50)` |
 | `propose_peer_match` | Coffee | `addDoc('peer_threads', { userAId, userBId, matchRationale })` |
 | `relay_message` | Coffee | `addDoc('peer_threads/{tid}/messages', ...)` + WS push to both users |
+
+---
+
+## 待完成項目（Group C）
+
+目前 API server 以 in-memory store 運作，尚未接 Firebase / 真實 Agents。以下為需補完的檔案：
+
+### 新建
+
+| 檔案 | 內容 |
+|------|------|
+| `lib/firestore.ts` | Firestore CRUD helpers（`getDoc`, `setDoc`, `addDoc`, `getDocs`），供 routes 和 tool wrappers 共用；建完後可刪除 `lib/store.ts` |
+
+### 修改
+
+| 檔案 | 待做事項 |
+|------|---------|
+| `middleware/auth.ts` | 改用 `getAuth().verifyIdToken(idToken)`；role 從 Firestore `/gov_staff/{uid}` 查 |
+| `routes/auth.ts` | 同上，`POST /auth/verify` 改驗 Firebase token |
+| `ws/handler.ts` | `handlePersonaMessage` 改呼叫 `invokePersonaAgent()`，移除 canned reply |
+| `agents/user/persona.ts` | 實作 `invokePersonaAgent()`：getOrCreateSession → Sessions API stream → 處理 custom_tool_use → WS push `agent_reply` |
+| `agents/user/tools.ts` | 所有 tool handler 改讀寫 Firestore（`get_my_persona`, `update_persona`, `publish_to_channel`）；`publish_to_channel` 完成後呼叫 `triggerGovAgent` + `triggerCoffeeMatch` |
+| `agents/user/coffee.ts` | 實作 `triggerCoffeeMatch()`：Sessions API → read_channel_messages → propose_peer_match → 寫 Firestore `peer_threads` |
+| `agent/gov/toolWrappers/readChannel.ts` | 改從 Firestore `channel_messages` 查詢，移除 fakeData 依賴 |
+| `agent/gov/toolWrappers/queryProgramDocs.ts` | 改從 Firestore `gov_resources/{rid}.pdfText` 讀取 |
+| `agent/gov/toolWrappers/proposeMatch.ts` | 改寫入 Firestore `channel_replies`，移除 mock 物件 |
+
+### 已完成，只需填 .env
+
+| 檔案 | 說明 |
+|------|------|
+| `lib/redis.ts` | 需填 `UPSTASH_REDIS_URL` |
+| `lib/session.ts` | getSession / setSession 已實作 |
+| `agents/user/setup.ts` | `initAgents()` 一次性建立 managed agents，跑完把 ID 填入 `.env` |
+| `agent/gov/managedAgent.ts` | `initGovManagedAgentSession()` 已實作 |
