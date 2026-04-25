@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { ClientEvent, ServerEvent, SwipeCard, SwipeCardAnswer } from '@matcha/shared-types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 import { auth } from '@/lib/firebase';
 import { WS_URL } from '@/lib/api';
+import { useAuth } from '@/containers/hooks/useAuth';
 import {
   clearCachedPersonaCardState,
   readCachedPersonaCardState,
@@ -48,8 +49,11 @@ const toPromptCard = (card: SwipeCard): PromptCard => {
 export default function CardScreen() {
   const { top } = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
   const [cards, setCards] = useState<PromptCard[]>([]);
   const [selectedChoice, setSelectedChoice] = useState<ChoiceKey>(null);
+  const [isLoadingCards, setIsLoadingCards] = useState(false);
 
   const position = useRef(new Animated.ValueXY()).current;
   const wsRef = useRef<WebSocket | null>(null);
@@ -95,61 +99,25 @@ export default function CardScreen() {
     });
   }, []);
 
-  useEffect(() => {
-    currentUserIdRef.current = auth.currentUser?.uid ?? null;
-  });
-
-  useEffect(() => {
-    let isMounted = true;
-
-    (async () => {
-      const uid = auth.currentUser?.uid;
-      currentUserIdRef.current = uid ?? null;
-
-      if (!uid) {
-        restoreCompleteRef.current = true;
-        return;
-      }
-
-      const cached = await readCachedPersonaCardState(uid);
-      if (!isMounted || !cached) {
-        restoreCompleteRef.current = true;
-        if (wsRef.current?.readyState === WebSocket.OPEN && cardsRef.current.length === 0) {
-          requestNextCard();
-        }
-        return;
-      }
-
-      cardsRef.current = cached.cards;
-      batchAnswersRef.current = cached.answers;
-      expectedBatchSizeRef.current = cached.expectedBatchSize;
-      awaitingBatchResponseRef.current = cached.awaitingBatchResponse;
-      setCards(cached.cards);
-      restoreCompleteRef.current = true;
-
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        if (cached.awaitingBatchResponse && cached.answers.length > 0) {
-          awaitingBatchResponseRef.current = false;
-          submitBatchAnswers();
-        } else if (cached.cards.length === 0) {
-          requestNextCard();
-        }
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [requestNextCard, submitBatchAnswers]);
+  // Keep currentUserIdRef in sync for persistCardState (which can't use closure over uid)
+  currentUserIdRef.current = uid;
 
   const requestNextCard = useCallback(() => {
-    if (requestPendingRef.current) return;
-    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    if (requestPendingRef.current) {
+      console.log('[card] requestNextCard skipped: request already pending');
+      return;
+    }
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      console.log('[card] requestNextCard skipped: WS not open, readyState=', wsRef.current?.readyState);
+      return;
+    }
 
     batchAnswersRef.current = [];
     receivedBatchCountRef.current = 0;
     expectedBatchSizeRef.current = 0;
     requestPendingRef.current = true;
+    setIsLoadingCards(true);
+    console.log('[card] sending swipe_card_request');
     const event: ClientEvent = { type: 'swipe_card_request', content: REQUEST_CARD_MESSAGE };
     wsRef.current.send(JSON.stringify(event));
     void persistCardState();
@@ -178,6 +146,49 @@ export default function CardScreen() {
 
     submitBatchAnswers();
   }, [submitBatchAnswers]);
+
+  useEffect(() => {
+    if (!uid) {
+      restoreCompleteRef.current = true;
+      return;
+    }
+
+    let isMounted = true;
+    restoreCompleteRef.current = false;
+
+    (async () => {
+      const cached = await readCachedPersonaCardState(uid);
+      if (!isMounted) return;
+
+      if (!cached) {
+        restoreCompleteRef.current = true;
+        if (wsRef.current?.readyState === WebSocket.OPEN && cardsRef.current.length === 0) {
+          requestNextCard();
+        }
+        return;
+      }
+
+      cardsRef.current = cached.cards;
+      batchAnswersRef.current = cached.answers;
+      expectedBatchSizeRef.current = cached.expectedBatchSize;
+      awaitingBatchResponseRef.current = cached.awaitingBatchResponse;
+      setCards(cached.cards);
+      restoreCompleteRef.current = true;
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        if (cached.awaitingBatchResponse && cached.answers.length > 0) {
+          awaitingBatchResponseRef.current = false;
+          submitBatchAnswers();
+        } else if (cached.cards.length === 0) {
+          requestNextCard();
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [uid, requestNextCard, submitBatchAnswers]);
 
   const showNextCard = () => {
     setCards((prev) => {
@@ -214,9 +225,13 @@ export default function CardScreen() {
   };
 
   useEffect(() => {
-    let isActive = true;
+    if (!uid) return;
 
-    (async () => {
+    let isActive = true;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = async () => {
+      if (!isActive) return;
       const wsUrl = await buildAuthedWsUrl();
       if (!isActive) return;
 
@@ -224,7 +239,11 @@ export default function CardScreen() {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        if (!restoreCompleteRef.current) return;
+        console.log('[card] WS open');
+        if (!restoreCompleteRef.current) {
+          console.log('[card] WS open but restore not complete, waiting');
+          return;
+        }
 
         if (awaitingBatchResponseRef.current && batchAnswersRef.current.length > 0) {
           awaitingBatchResponseRef.current = false;
@@ -240,7 +259,11 @@ export default function CardScreen() {
       ws.onmessage = (event) => {
         try {
           const data: ServerEvent = JSON.parse(event.data);
+          console.log('[card] WS message type:', data.type);
+
           if (data.type === 'swipe_card') {
+            console.log('[card] received swipe_card:', data.card.cardId);
+            setIsLoadingCards(false);
             receivedBatchCountRef.current += 1;
             setCards((prev) => {
               if (prev.some((card) => card.cardId === data.card.cardId)) {
@@ -255,9 +278,13 @@ export default function CardScreen() {
 
           if (data.type === 'agent_reply' && data.done) {
             const wasAwaitingBatchResponse = awaitingBatchResponseRef.current;
+            const cardsReceived = receivedBatchCountRef.current;
+            console.log(`[card] agent_reply done, cards=${cardsReceived}, awaitingBatch=${wasAwaitingBatchResponse}`);
             requestPendingRef.current = false;
-            if (receivedBatchCountRef.current > 0) {
-              expectedBatchSizeRef.current = receivedBatchCountRef.current;
+
+            if (cardsReceived > 0) {
+              expectedBatchSizeRef.current = cardsReceived;
+              receivedBatchCountRef.current = 0;
               void persistCardState();
             }
 
@@ -269,36 +296,68 @@ export default function CardScreen() {
               expectedBatchSizeRef.current = 0;
               void persistCardState();
               requestNextCard();
+              return;
+            }
+
+            // Agent returned no cards — retry after 4s
+            if (cardsReceived === 0 && !wasAwaitingBatchResponse) {
+              console.warn('[card] 0 cards received, retrying in 4s');
+              setIsLoadingCards(true);
+              setTimeout(() => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                  requestNextCard();
+                } else {
+                  setIsLoadingCards(false);
+                }
+              }, 4000);
             }
           }
 
           if (data.type === 'error') {
+            console.error('[card] server error:', (data as { code?: string; message?: string }).code, (data as { message?: string }).message);
             requestPendingRef.current = false;
+            awaitingBatchResponseRef.current = false;
+            setIsLoadingCards(false);
             void persistCardState();
+            // Retry after error if no cards in queue
+            if (cardsRef.current.length === 0) {
+              setTimeout(() => {
+                if (wsRef.current?.readyState === WebSocket.OPEN) requestNextCard();
+              }, 3000);
+            }
           }
-        } catch {
+        } catch (e) {
+          console.error('[card] failed to parse WS message:', e);
           requestPendingRef.current = false;
           void persistCardState();
         }
       };
 
-      ws.onclose = () => {
-        if (wsRef.current === ws) {
-          wsRef.current = null;
-        }
+      ws.onclose = (e) => {
+        console.log('[card] WS closed, code=', e.code, 'reason=', e.reason);
+        if (wsRef.current === ws) wsRef.current = null;
         requestPendingRef.current = false;
+        awaitingBatchResponseRef.current = false;
+        setIsLoadingCards(false);
         void persistCardState();
+        if (isActive) {
+          console.log('[card] reconnecting in 3s...');
+          reconnectTimer = setTimeout(connect, 3000);
+        }
       };
-    })();
+    };
+
+    void connect();
 
     return () => {
       isActive = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current?.close();
       wsRef.current = null;
       requestPendingRef.current = false;
       void persistCardState();
     };
-  }, [maybeSubmitBatchAnswers, persistCardState, requestNextCard, submitBatchAnswers]);
+  }, [uid, maybeSubmitBatchAnswers, persistCardState, requestNextCard, submitBatchAnswers]);
 
   const panResponder = useRef(
     PanResponder.create({
@@ -350,12 +409,22 @@ export default function CardScreen() {
         </View>
 
         <View style={styles.stage}>
-          <View style={[styles.stackCard, styles.stackCardBack]} />
-          <View style={[styles.stackCard, styles.stackCardMiddle]} />
+          {isLoadingCards && cards.length === 0 ? (
+            <View style={styles.loadingCard}>
+              <ActivityIndicator size="large" color="#6ACFF0" />
+              <ThemedText style={styles.loadingText}>AI 正在生成新的問題…</ThemedText>
+            </View>
+          ) : (
+            <>
+              <View style={[styles.stackCard, styles.stackCardBack]} />
+              <View style={[styles.stackCard, styles.stackCardMiddle]} />
+            </>
+          )}
 
           <Animated.View
             style={[
               styles.questionCard,
+              isLoadingCards && cards.length === 0 && styles.questionCardHidden,
               { transform: [{ translateX: position.x }, { rotate: cardRotate }] },
             ]}
             {...panResponder.panHandlers}>
@@ -486,6 +555,20 @@ const styles = StyleSheet.create({
     bottom: 62,
     transform: [{ rotate: '4deg' }, { translateX: 16 }],
     opacity: 0.75,
+  },
+  loadingCard: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 15,
+    color: '#8AA7C4',
+  },
+  questionCardHidden: {
+    opacity: 0,
+    pointerEvents: 'none' as const,
   },
   questionCard: {
     flex: 1,

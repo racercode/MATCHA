@@ -240,7 +240,7 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
   const session = await client.beta.sessions.create({
     agent: agentId,
     environment_id: environmentId,
-    title: `gov-${resourceId.slice(0, 30)}-${sessionKey}`.slice(0, 64),
+    title: `gov-${(resourceId ?? agencyId).slice(0, 30)}-${sessionKey}`.slice(0, 64),
   })
 
   const nextRecord: GovernmentAgentRecord = {
@@ -256,7 +256,7 @@ export async function initGovManagedAgentSession(options: InitGovManagedAgentSes
     sessions: upsertSession(record.sessions, {
       key: sessionKey,
       sessionId: session.id,
-      title: `gov-${resourceId.slice(0, 30)}-${sessionKey}`.slice(0, 64),
+      title: `gov-${(resourceId ?? agencyId).slice(0, 30)}-${sessionKey}`.slice(0, 64),
       createdAt: now,
       updatedAt: now,
     }),

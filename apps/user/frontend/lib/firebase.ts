@@ -4,6 +4,7 @@ import {
   getAuth,
   browserLocalPersistence,
   setPersistence,
+  // @ts-ignore – getReactNativePersistence exists at runtime but missing from v11 types
   getReactNativePersistence,
 } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';

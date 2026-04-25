@@ -116,9 +116,25 @@ export interface SwipeCard {
     rightValue: string;
 }
 export type SwipeDirection = 'left' | 'right';
+export interface SwipeCardAnswer {
+    cardId: string;
+    direction: SwipeDirection;
+    value: string;
+}
 export type ClientEvent = {
     type: 'persona_message';
     content: string;
+} | {
+    type: 'swipe_card_request';
+    content?: string;
+} | {
+    type: 'swipe_card_answer';
+    cardId: string;
+    direction: SwipeDirection;
+    value: string;
+} | {
+    type: 'swipe_card_batch_answer';
+    answers: SwipeCardAnswer[];
 } | {
     type: 'peer_message';
     threadId: string;

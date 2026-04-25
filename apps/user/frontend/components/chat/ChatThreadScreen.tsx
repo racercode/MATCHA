@@ -383,7 +383,7 @@ export default function ChatThreadScreen() {
 
         const cachedCardState = await readCachedPersonaCardState(currentUserId);
         const hasCachedCards =
-          Boolean(cachedCardState) &&
+          cachedCardState != null &&
           (cachedCardState.cards.length > 0 ||
             cachedCardState.answers.length > 0 ||
             cachedCardState.awaitingBatchResponse);

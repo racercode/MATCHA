@@ -6,6 +6,8 @@ import { clients, userRoles, userGovIds, broadcast } from './push.js'
 import type { ServerEvent } from './push.js'
 import { initPersonaManagedAgentSession } from '../agent/persona/managedAgent.js'
 import { runPersonaAgentTurn } from '../agent/persona/pipeline.js'
+import { generateSwipeCards, processSwipeAnswers } from '../agent/persona/cardAgent.js'
+
 
 export { broadcast }
 
@@ -63,44 +65,32 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
     }
 
     case 'swipe_card_request': {
-      const content =
-        typeof msg.content === 'string' && msg.content.trim().length > 0
-          ? msg.content
-          : 'generate_swipe_card'
-
+      console.log(`[card] swipe_card_request from ${uid}`)
       try {
-        const sessionId = await initPersonaManagedAgentSession(uid, 'card')
-        await runPersonaAgentTurn(sessionId, uid, content, event => sendToSocket(ws, event))
+        const personaDoc = await db.collection('personas').doc(uid).get()
+        const persona = personaDoc.exists
+          ? (personaDoc.data() as { summary: string; needs: string[]; offers: string[] })
+          : null
+        const cards = await generateSwipeCards(uid, persona)
+        for (const card of cards) {
+          broadcast(uid, { type: 'swipe_card', card })
+        }
+        sendToSocket(ws, { type: 'agent_reply', content: '', done: true })
       } catch (err) {
-        console.error('[persona/card] agent error:', err)
-        sendError(ws, 'AGENT_ERROR', '卡片代理人發生錯誤，請稍後再試')
+        console.error('[card] generateSwipeCards error:', err)
+        sendError(ws, 'AGENT_ERROR', '卡片生成失敗，請稍後再試')
       }
       break
     }
 
     case 'swipe_card_answer': {
-      const { cardId, direction, value } = msg
-      if (
-        typeof cardId !== 'string' ||
-        (direction !== 'left' && direction !== 'right') ||
-        typeof value !== 'string'
-      ) {
-        sendError(ws, 'BAD_REQUEST', '缺少 cardId、direction 或 value')
-        return
-      }
-
-      try {
-        const sessionId = await initPersonaManagedAgentSession(uid, 'card')
-        const content = `[swipe:${cardId}:${direction}] ${value}`
-        await runPersonaAgentTurn(sessionId, uid, content, event => sendToSocket(ws, event))
-      } catch (err) {
-        console.error('[persona/card] answer error:', err)
-        sendError(ws, 'AGENT_ERROR', '卡片答案送出失敗，請稍後再試')
-      }
+      // Single-answer path kept for compatibility but not used by current frontend
+      sendToSocket(ws, { type: 'agent_reply', content: '', done: true })
       break
     }
 
     case 'swipe_card_batch_answer': {
+      console.log(`[card] swipe_card_batch_answer from ${uid}, ${(msg.answers as unknown[])?.length ?? 0} answers`)
       const { answers } = msg
       if (
         !Array.isArray(answers) ||
@@ -119,13 +109,10 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
       }
 
       try {
-        const sessionId = await initPersonaManagedAgentSession(uid, 'card')
-        const content = answers
-          .map(answer => `[swipe:${answer.cardId}:${answer.direction}] ${answer.value}`)
-          .join('\n')
-        await runPersonaAgentTurn(sessionId, uid, content, event => sendToSocket(ws, event))
+        await processSwipeAnswers(uid, answers as { cardId: string; direction: 'left' | 'right'; value: string }[])
+        sendToSocket(ws, { type: 'agent_reply', content: '', done: true })
       } catch (err) {
-        console.error('[persona/card] batch answer error:', err)
+        console.error('[card] processSwipeAnswers error:', err)
         sendError(ws, 'AGENT_ERROR', '卡片答案批次送出失敗，請稍後再試')
       }
       break
