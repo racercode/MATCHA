@@ -1,5 +1,33 @@
 node_modules/
 
+<<<<<<< HEAD
+# Local env / Expo
+.env
+.env.*
+!.env.example
+!.env.sample
+.expo/
+dist/
+build/
+
+# Logs / caches
+*.log
+.DS_Store
+
+# Common binary / app build artifacts
+*.apk
+*.aab
+*.ipa
+*.app
+*.dmg
+*.exe
+*.msi
+*.bin
+*.out
+
+# Ignore archived prototype project
+apps/user/wvs_project50/
+=======
 # env & secrets
 .env
 .env.*
@@ -17,3 +45,4 @@ command.ps
 # runtime-generated agent registry
 services/api/src/agent/general/governmentAgents.json
 services/api/src/agent/general/userAgents.json
+>>>>>>> b975a5c78f8b77852ffaf72b61fe4991a3c48ac6
