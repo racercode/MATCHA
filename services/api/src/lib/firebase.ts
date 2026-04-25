@@ -22,4 +22,5 @@ if (!getApps().length) {
 
 export const db = getFirestore()
 export const auth = getAuth()
-export const bucket = getStorage().bucket()
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const bucket: any = getStorage().bucket()

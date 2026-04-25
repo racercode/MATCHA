@@ -42,9 +42,11 @@ async function runCoffeeSession(sessionId: string, prompt: string): Promise<{ to
   })
 
   for await (const event of stream) {
-    if (event.type === 'agent.text') {
-      const chunk = (event as { text?: string }).text ?? ''
-      agentText += chunk
+    if (event.type === 'agent.message') {
+      const content = (event as { content?: { type: string; text?: string }[] }).content ?? []
+      for (const block of content) {
+        if (block.type === 'text') agentText += block.text ?? ''
+      }
     }
 
     if (event.type === 'agent.custom_tool_use') {

@@ -116,15 +116,28 @@ router.post('/me/reset-memory', async (req, res) => {
   const { uid } = req as AuthedRequest
 
   try {
-    const clearedPersonaSessions = await clearUserAgentSessions(
-      'persona-agent-shared',
-      (session) => session.key === uid || session.key.startsWith(`${uid}:`),
-    )
+    const [clearedPersonaSessions, chatSnap] = await Promise.all([
+      clearUserAgentSessions(
+        'persona-agent-shared',
+        (session) => session.key === uid || session.key.startsWith(`${uid}:`),
+      ),
+      db.collection('persona_chats').doc(uid).collection('messages').get(),
+    ])
+
+    const deleteBatch = db.batch()
+    for (const doc of chatSnap.docs) {
+      deleteBatch.delete(doc.ref)
+    }
+    deleteBatch.delete(db.collection('persona_chats').doc(uid))
+    deleteBatch.delete(db.collection('personas').doc(uid))
+    await deleteBatch.commit()
 
     res.json({
       success: true,
       data: {
         clearedPersonaSessions,
+        deletedChatMessages: chatSnap.size,
+        deletedPersona: true,
       },
     })
   } catch (error) {

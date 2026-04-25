@@ -4,6 +4,7 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { router, useLocalSearchParams } from 'expo-router';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   NativeScrollEvent,
@@ -556,6 +557,18 @@ export default function ChatThreadScreen() {
               return [...prev, { ...data.message, tid: activeThreadId }];
             });
             scrollToBottom();
+          }
+
+          if (data.type === 'match_notify') {
+            const peerName = (data as any).peer?.displayName ?? '有人';
+            Alert.alert(
+              '新配對！',
+              `Agent 幫你配對了 ${peerName}，快去 Coffee Chat 看看！`,
+              [
+                { text: '稍後再說', style: 'cancel' },
+                { text: '前往查看', onPress: () => router.push('/(tabs)/cafe-chat') },
+              ],
+            );
           }
         } catch {
           // ignore malformed events
