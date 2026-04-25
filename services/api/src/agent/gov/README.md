@@ -17,6 +17,7 @@ services/api/src/agent/gov/
 ├── pipeline.ts           # 媒合評估與 pipeline 流程
 ├── main.ts               # 執行完整 pipeline 的進入點
 ├── pipeline.test.ts      # 單元測試（node:test）
+├── testTrigger.ts        # 測試觸發流程（寫假 message → 跑 gov agent pipeline）
 ├── skills/
 │   ├── read_channel/SKILL.md
 │   ├── query_resource_document/SKILL.md
@@ -77,6 +78,56 @@ npm run gov:run
 - 小雅 → 創意產業實習媒合計畫（score >= 70）
 - 阿明 → 青年職涯探索諮詢（score >= 70）
 - 小林 → 青年創業輔導與貸款說明（score >= 70）
+
+## 測試觸發流程（testTrigger）
+
+用來驗證「新 channel message → gov agent 媒合」整條 pipeline 是否正常運作。
+
+**不需要先啟動後端 server。** 這個 script 直接 import firebase 和 pipeline 模組，不經過 Express。
+
+前置條件：
+
+1. `services/api/.env` 設好 `ANTHROPIC_API_KEY` 和 Firebase Admin 環境變數（`FIREBASE_PROJECT_ID`、`FIREBASE_CLIENT_EMAIL`、`FIREBASE_PRIVATE_KEY`）
+2. Firestore `gov_resources` 裡至少有一筆政府資源
+
+執行：
+
+```bash
+# 從專案根目錄
+pnpm --filter api exec tsx src/agent/gov/testTrigger.ts
+
+# fire-and-forget 模式（模擬 publishToChannel 的非同步觸發路徑）
+pnpm --filter api exec tsx src/agent/gov/testTrigger.ts -- --fire-and-forget
+```
+
+script 會做以下事情：
+
+1. 寫一筆假的 `channel_messages/{msgId}` 到 Firestore
+2. 呼叫 `handleGovAgentRunForMessage(msgId)` 觸發所有 resource agent
+3. 印出每個 resource 的媒合結果（decision、score、reason）
+
+預期輸出範例：
+
+```
+[1/2] Writing test channel message to Firestore...
+[1/2] Done — channel_messages/test-trigger-1714100000000 created
+[2/2] Triggering handleGovAgentRunForMessage...
+
+=== Result ===
+resourceCount: 3
+matchCount: 1
+  - [MATCH] score=75 reason=符合青年創業輔導資格
+```
+
+如果要驗證特定 message 有沒有被處理過，也可以直接打已啟動的後端 API（需要先 `pnpm --filter api dev`）：
+
+```bash
+curl -X POST http://localhost:3000/gov/agent/run-message \
+  -H "Content-Type: application/json" \
+  -d '{"messageId":"<msgId>","threshold":30}'
+```
+
+這支 API 有 idempotency 保護：同一筆 messageId 如果已經是 `running` 或 `completed` 會直接回傳 skipped，不會重複跑。上次 `failed` 的才會重跑。
 
 ## 核心概念
 
