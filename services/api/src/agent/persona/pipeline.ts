@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk'
 import { client } from './managedAgent.js'
 import { broadcast } from '../../ws/push.js'
 import type { ServerEvent } from '../../ws/push.js'
@@ -42,19 +43,39 @@ export async function runPersonaAgentTurn(
 
   const stream = await client.beta.sessions.events.stream(sessionId)
 
-  await client.beta.sessions.events.send(sessionId, {
-    events: [
-      {
-        type: 'user.message',
-        content: [{ type: 'text', text: userMessage }],
-      },
-    ],
-  })
+  // pendingMessage is set when the session is stuck in requires_action and needs
+  // an interrupt before it can accept the new user message.
+  let pendingMessage: string | null = null
+
+  try {
+    await client.beta.sessions.events.send(sessionId, {
+      events: [{ type: 'user.message', content: [{ type: 'text', text: userMessage }] }],
+    })
+  } catch (err: unknown) {
+    if (err instanceof Anthropic.BadRequestError && err.message.includes('user.interrupt')) {
+      // Session is waiting on a previous tool result; interrupt it so we can proceed.
+      await client.beta.sessions.events.send(sessionId, {
+        events: [{ type: 'user.interrupt' }],
+      })
+      pendingMessage = userMessage
+    } else {
+      throw err
+    }
+  }
 
   let cardsEmitted = 0
 
   for await (const event of stream) {
     console.log(`[pipeline] event type=${event.type}`)
+
+    // Once the session idles after the interrupt, send the deferred user message.
+    if (pendingMessage !== null && event.type === 'session.status_idle') {
+      await client.beta.sessions.events.send(sessionId, {
+        events: [{ type: 'user.message', content: [{ type: 'text', text: pendingMessage }] }],
+      })
+      pendingMessage = null
+      continue
+    }
 
     if (event.type === 'agent.custom_tool_use') {
       console.log(`  [persona tool] ${event.name}`, JSON.stringify(event.input).slice(0, 200))

@@ -321,19 +321,21 @@ router.get('/gov/channel-messages', async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 30, 100)
 
   const [msgsSnap, repliesSnap] = await Promise.all([
-    db.collection('channel_messages').get(),
+    db.collection('channel_messages').orderBy('publishedAt', 'desc').limit(limit).get(),
     db.collection('channel_replies').get(),
   ])
 
   const messages = msgsSnap.docs
-    .map(d => ({
-      msgId: d.id,
-      uid: String(d.data().uid ?? ''),
-      summary: String(d.data().summary ?? ''),
-      publishedAt: toMs(d.data().publishedAt ?? d.data().createdAt ?? { seconds: 0, nanoseconds: 0 }),
-    }))
-    .sort((a, b) => b.publishedAt - a.publishedAt)
-    .slice(0, limit)
+    .map(d => {
+      const data = d.data()
+      const ts = data.publishedAt ?? data.createdAt
+      return {
+        msgId: d.id,
+        uid: String(data.uid ?? ''),
+        summary: String(data.summary ?? ''),
+        publishedAt: ts ? toMs(ts) : 0,
+      }
+    })
 
   const citizenUids = [...new Set(messages.map(m => m.uid).filter(Boolean))]
   const personaMap = new Map<string, { displayName: string }>()

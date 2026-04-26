@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const PERSONA_AGENT_MODEL = 'claude-haiku-4-5'
-const PERSONA_AGENT_CONFIG_VERSION = 'persona-v4'
+const PERSONA_AGENT_CONFIG_VERSION = 'persona-v5'
 // Single shared agent record; per-user sessions stored as session entries keyed by uid
 const PERSONA_AGENT_UID = 'persona-agent-shared'
 

@@ -26,6 +26,26 @@ async function findGovStaffUidByGovId(govId: string): Promise<string | undefined
   return snap.empty ? undefined : snap.docs[0].id
 }
 
+// ── Reconnect deduplication ───────────────────────────────────────────────────
+// When the user presses back and returns, the frontend re-sends the last
+// message because it never received the done signal. Track recently processed
+// messages so we don't run the same turn twice.
+
+const DEDUP_WINDOW_MS = 15_000
+const recentPersonaTurns = new Map<string, number>() // `${uid}:${text}` → timestamp
+
+function isDuplicatePersonaMessage(uid: string, text: string): boolean {
+  const key = `${uid}:${text}`
+  const now = Date.now()
+  // Prune expired entries
+  for (const [k, ts] of recentPersonaTurns) {
+    if (now - ts > DEDUP_WINDOW_MS) recentPersonaTurns.delete(k)
+  }
+  if (recentPersonaTurns.has(key)) return true
+  recentPersonaTurns.set(key, now)
+  return false
+}
+
 // ── Event handler ─────────────────────────────────────────────────────────────
 
 async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string, unknown>) {
@@ -36,6 +56,13 @@ async function handleClientEvent(ws: WebSocket, uid: string, msg: Record<string,
         return
       }
       const userText = msg.content
+      if (isDuplicatePersonaMessage(uid, userText)) {
+        // First pipeline already processed (and saved) this turn; signal done so
+        // the frontend can load the response from chat history.
+        console.log(`[persona] dedup: skipping duplicate message for ${uid}`)
+        sendToSocket(ws, { type: 'agent_reply', content: '', done: true })
+        return
+      }
       await db.collection('persona_chats').doc(uid).collection('messages').add({
         from: `human:${uid}`,
         text: userText,

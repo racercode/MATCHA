@@ -15,6 +15,10 @@
   <img src="https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white" alt="Next.js"/>
 </p>
 
+<video src="docs/videos/demo-gov-channel.mp4" controls width="600"></video>
+<video src="docs/videos/demo-gov-resources.mp4" controls width="600"></video>
+<video src="docs/videos/demo-gov-dashboard.mp4" controls width="600"></video>
+
 ---
 
 ## 30 秒看懂這個專案
@@ -34,7 +38,7 @@ MATCHA 的解法不是做一個「更好的搜尋引擎」，而是建立一個 
 
 ```
 ┌──────────┐     廣播 persona      ┌──────────────┐     媒合回覆    ┌──────────────┐
-│ 青年 App │ ──── 聊天建立畫像 ────→│   Channel    │←── 逐一評估 ────│  Gov Agent   │
+│ 青年 App  │ ──── 聊天建立畫像 ────→│   Channel    │←── 逐一評估 ────│  Gov Agent   │
 │ (RN/Expo)│ ←── 收到媒合通知 ──── │ (社群頻道)    │   (per 資源)    │  x N 個資源   │
 └──────────┘                      └──────────────┘                 └──────────────┘
      │                                   │                              │
@@ -57,7 +61,7 @@ MATCHA 的解法不是做一個「更好的搜尋引擎」，而是建立一個 
 | **資料來源** | 台北市青年局公開政策文件（PDF）、data.taipei 開放資料 |
 
 ---
-
+<!-- 
 ## Illustration Video
 
 ### User Side
@@ -68,7 +72,7 @@ MATCHA 的解法不是做一個「更好的搜尋引擎」，而是建立一個 
 
 [![Government Side Demo](asset/gov_video.gif)](asset/gov_video.mp4)
 
----
+--- -->
 
 ## 使用說明
 
@@ -282,19 +286,6 @@ pnpm --filter api gov:upload-resources # 批次上傳 data/ 到 Firestore
 
 ---
 
-## 開發藍圖
-
-| 階段 | 任務 | 狀態 |
-|------|------|------|
-| **Phase 1** | Monorepo 建立、shared-types 定義、Mock Server、基礎 UI 框架 | Done |
-| **Phase 2** | Persona Agent（對話 + Swipe + 廣播）、Express REST API、WebSocket | Done |
-| **Phase 3** | Gov Agent Pipeline（RAG + 媒合評分 + channel_replies）、資源文件上傳與解析 | Done |
-| **Phase 4** | Coffee Agent（Peer 配對 + 代理聊天）、Human Thread（政府開啟真人對話） | Done |
-| **Phase 5** | 政府 Dashboard 統計、資源追問 Follow-Up API、並行 Agent 觸發、媒合統計 | Done |
-| **Future** | Firebase Auth 正式整合、FCM Push 通知、個人檔案雷達圖、政策數據反饋儀表板 | Planned |
-
----
-
 ## 評分維度自評
 
 ### 1. 技術實作 / 功能完整度
@@ -310,10 +301,6 @@ pnpm --filter api gov:upload-resources # 批次上傳 data/ 到 Firestore
 - 冪等觸發機制（`gov_agent_runs/{messageId}`）防止重複處理同一 channel message
 - 可控的並行度（`GOV_AGENT_CONCURRENCY` 環境變數）
 - In-memory fallback 模式：不接 Firebase/Claude 也能跑完整 API，供前端獨立開發
-
-**GitHub 開發規範**
-- pnpm monorepo + shared-types contract-first 開發
-- 三組平行開發（mobile / web / api），透過 mock server 解耦
 
 ### 2. 創新性
 
@@ -380,7 +367,6 @@ pnpm --filter api gov:upload-resources # 批次上傳 data/ 到 Firestore
 | [`intro.md`](./intro.md) | 完整專案介紹（動機 → 情境 → 架構 → 技術細節） |
 | [`api-doc.md`](./api-doc.md) | REST API + WebSocket 完整合約 |
 | [`plan.md`](./plan.md) | 開發計畫與 Agent 實作細節 |
-| [`data/README.md`](./data/README.md) | 政府資源資料格式與上傳說明 |
 
 ---
 
