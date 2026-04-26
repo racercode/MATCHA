@@ -19,7 +19,7 @@ if (!globalThis.File) {
 }
 
 const GOV_AGENT_MODEL = 'claude-haiku-4-5'
-const GOV_AGENT_CONFIG_VERSION = 'persist-v2'
+export const GOV_AGENT_CONFIG_VERSION = 'persist-v2'
 const DEFAULT_AGENCY_ID = 'taipei-youth-dept'
 const DEFAULT_AGENCY_NAME = '臺北市青年局'
 const DEFAULT_SESSION_KEY = 'default'
@@ -150,6 +150,16 @@ function toSkillParams(skillIds: string[]) {
 function isRecordReusable(record: GovernmentAgentRecord, sessionKey: string): boolean {
   return Boolean(
     record.agentId &&
+    record.environmentId &&
+    record.configVersion === GOV_AGENT_CONFIG_VERSION &&
+    record.skillIds?.length &&
+    record.sessions.find(session => session.key === sessionKey),
+  )
+}
+
+function isFollowUpReusable(record: GovernmentAgentRecord, sessionKey: string): boolean {
+  return Boolean(
+    record.followUpAgentId &&
     record.environmentId &&
     record.configVersion === GOV_AGENT_CONFIG_VERSION &&
     record.skillIds?.length &&
@@ -304,17 +314,14 @@ export async function initGovFollowUpSession(options: InitGovManagedAgentSession
   const agentScopeSlug = agentScope.replace(/[^a-zA-Z0-9-_]/g, '-')
   const displayName = resourceName ? `${resourceName} (${resourceId})` : agentScope
 
-  // Store follow-up agents under a separate registry key to avoid clobbering the matching agent
-  const followupResourceId = resourceId ? `${resourceId}:followup` : ':followup'
-
-  let record = await getGovernmentAgentRecord(agencyId, followupResourceId)
+  let record = await getGovernmentAgentRecord(agencyId, resourceId)
 
   if (!record) {
     record = {
       agencyId,
       agencyName,
-      resourceId: followupResourceId,
-      resourceName: resourceName ? `${resourceName} (followup)` : followupResourceId,
+      resourceId,
+      resourceName,
       model: GOV_AGENT_MODEL,
       sessions: [],
       createdAt: now,
@@ -323,10 +330,13 @@ export async function initGovFollowUpSession(options: InitGovManagedAgentSession
   }
 
   const reusableSession = record.sessions.find(session => session.key === sessionKey)
-  if (isRecordReusable(record, sessionKey) && reusableSession) {
+  if (isFollowUpReusable(record, sessionKey) && reusableSession) {
     await upsertGovernmentAgentRecord({
       ...record,
-      sessions: upsertSession(record.sessions, { ...reusableSession, updatedAt: now }),
+      sessions: upsertSession(record.sessions, {
+        ...reusableSession,
+        updatedAt: now,
+      }),
       updatedAt: now,
     })
     console.log(`[Gov FollowUp] Reusing session: ${reusableSession.sessionId}`)
@@ -336,10 +346,11 @@ export async function initGovFollowUpSession(options: InitGovManagedAgentSession
   let skillIds = record.skillIds
   if (!skillIds?.length || record.configVersion !== GOV_AGENT_CONFIG_VERSION) {
     skillIds = await createGovSkills()
+    console.log(`[Gov FollowUp] Skills uploaded: ${skillIds.join(', ')}`)
   }
 
-  let agentId = record.agentId
-  if (!agentId) {
+  let followUpAgentId = record.followUpAgentId
+  if (!followUpAgentId) {
     const agent = await client.beta.agents.create({
       name: `MATCHA Gov FollowUp Agent (${displayName})`,
       model: GOV_AGENT_MODEL,
@@ -347,32 +358,33 @@ export async function initGovFollowUpSession(options: InitGovManagedAgentSession
       skills: toSkillParams(skillIds),
       tools: [
         ...GOV_CUSTOM_TOOLS,
-        { type: 'agent_toolset_20260401' as const, configs: [{ name: 'read' as const, enabled: true }] },
+        {
+          type: 'agent_toolset_20260401' as const,
+          configs: [{ name: 'read' as const, enabled: true }],
+        },
       ],
     })
-    agentId = agent.id
-    console.log(`[Gov FollowUp] Agent created for ${agentScope}: ${agentId}`)
+    followUpAgentId = agent.id
+    console.log(`[Gov FollowUp] Agent created for ${agentScope}: ${followUpAgentId}`)
   } else {
-    const agent = await client.beta.agents.retrieve(agentId)
-    await client.beta.agents.update(agentId, {
+    const agent = await client.beta.agents.retrieve(followUpAgentId)
+    await client.beta.agents.update(followUpAgentId, {
       version: agent.version,
       model: GOV_AGENT_MODEL,
       system: GOV_FOLLOWUP_SYSTEM_PROMPT,
       skills: toSkillParams(skillIds),
       tools: [
         ...GOV_CUSTOM_TOOLS,
-        { type: 'agent_toolset_20260401' as const, configs: [{ name: 'read' as const, enabled: true }] },
+        {
+          type: 'agent_toolset_20260401' as const,
+          configs: [{ name: 'read' as const, enabled: true }],
+        },
       ],
     })
-    console.log(`[Gov FollowUp] Agent updated for ${agentScope}: ${agentId}`)
+    console.log(`[Gov FollowUp] Agent updated for ${agentScope}: ${followUpAgentId}`)
   }
 
-  // Reuse the matching agent's environment if available, otherwise create one
   let environmentId = record.environmentId
-  if (!environmentId) {
-    const matchingRecord = await getGovernmentAgentRecord(agencyId, resourceId)
-    environmentId = matchingRecord?.environmentId
-  }
   if (!environmentId) {
     const environment = await client.beta.environments.create({
       name: `matcha-gov-agent-env-${agentScopeSlug}`,
@@ -385,14 +397,17 @@ export async function initGovFollowUpSession(options: InitGovManagedAgentSession
   }
 
   const session = await client.beta.sessions.create({
-    agent: agentId,
+    agent: followUpAgentId,
     environment_id: environmentId,
     title: `followup-${(resourceId ?? agencyId).slice(0, 30)}-${sessionKey}`.slice(0, 64),
   })
 
-  await upsertGovernmentAgentRecord({
+  const nextRecord: GovernmentAgentRecord = {
     ...record,
-    agentId,
+    agencyName,
+    resourceId,
+    resourceName,
+    followUpAgentId,
     environmentId,
     skillIds,
     configVersion: GOV_AGENT_CONFIG_VERSION,
@@ -405,7 +420,9 @@ export async function initGovFollowUpSession(options: InitGovManagedAgentSession
       updatedAt: now,
     }),
     updatedAt: now,
-  })
+  }
+
+  await upsertGovernmentAgentRecord(nextRecord)
 
   console.log(`[Gov FollowUp] Session created for ${agentScope}: ${session.id}`)
   return session.id

@@ -31,6 +31,7 @@ export interface GovernmentAgentRecord {
   resourceId?: string
   resourceName?: string
   agentId?: string
+  followUpAgentId?: string
   environmentId?: string
   skillIds?: string[]
   configVersion?: string
