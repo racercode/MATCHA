@@ -36,16 +36,20 @@ MATCHA 的解法不是做一個「更好的搜尋引擎」，而是建立一個 
 - **自動媒合**：每個政府資源各有一個 AI Agent，主動讀取青年畫像、比對資格、推送媒合通知（含分數與理由）
 - **Coffee Chat**：AI 自動配對背景相似的青年，促成同儕交流與經驗分享
 
-```
-┌──────────┐     廣播 persona      ┌──────────────┐     媒合回覆    ┌──────────────┐
-│ 青年 App  │ ──── 聊天建立畫像 ────→│   Channel    │←── 逐一評估 ────│  Gov Agent   │
-│ (RN/Expo)│ ←── 收到媒合通知 ──── │ (社群頻道)    │   (per 資源)    │  x N 個資源   │
-└──────────┘                      └──────────────┘                 └──────────────┘
-     │                                   │                              │
-     │  追問資源細節                      │  配對相似青年                 │  承辦人查看
-     │  (Follow-Up Agent)                │  (Coffee Agent)              │  (Dashboard)
-     ▼                                   ▼                              ▼
-  即時 Q&A                          Peer Thread                    開啟真人對話
+```mermaid
+graph LR
+
+    APP["🧑 使用者App<br/>(RN / Expo)"]
+    CH["📢 Channel<br/>(社群頻道)"]
+    GOV["🏛️ Gov Agent<br/>(x N 個資源)"]
+
+    APP -->|"廣播需求"| CH
+    CH -->|"收到媒合通知"| APP
+    GOV -->|"資源逐一媒合回覆"| CH
+
+    APP -->|"追問資源細節<br/>(Follow-Up Agent)"| QA
+    APP -->|"配對相似青年<br/>(Coffee Agent)"| APP
+
 ```
 
 ---
@@ -91,6 +95,84 @@ MATCHA 的解法不是做一個「更好的搜尋引擎」，而是建立一個 
 2. 在 **Dashboard** 查看媒合統計——總回覆數、平均分數、開話率、分數分佈、資源熱度
 3. 在 **Channel Replies** 檢視 AI 媒合結果，可依分數篩選
 4. 點擊 **「開啟對話」** 建立 Human Thread，與市民一對一即時溝通
+
+---
+
+## 專案架構圖
+
+
+```mermaid
+graph LR
+
+    %% ===== 使用者端 =====
+    subgraph USER["👤 使用者端 App — React Native"]
+        direction TB
+        U1["💬 聊天 Agent"]
+        U2["🔔 媒合通知"]
+        U3["🃏 滑卡測驗"]
+        U4["☕ Coffee Chat"]
+    end
+
+    %% ===== 後端 =====
+    subgraph BACKEND["⚙️ 後端 — Express.js"]
+        direction TB
+
+        subgraph FIREBASE["🗄️ Firebase"]
+            direction LR
+            DB1[("💬 聊天室")]
+            DB2[("👤 User 背景")]
+            DB3[("📊 統計資料")]
+            DB4[("📁 資源文件")]
+        end
+
+        subgraph CLAUDE["🤖 Claude Managed Agent"]
+            direction LR
+            UA["🧑 User Agent"]
+            RA["🏛️ Resource Agent"]
+        end
+    end
+
+    %% ===== 政府端 =====
+    subgraph GOV["🏛️ 政府端 — Next.js"]
+        direction TB
+        G1["📊 數據儀錶板"]
+        G2["💬 社交紀錄"]
+        G3["📁 資源管理"]
+    end
+
+    %% ── 使用者端 → User Agent ──
+    U1 <-->|"對話建立 Persona"| UA
+    U3 <-->|"根據缺漏背景訊息發問"| UA
+    U4 <-->|"紀錄agent coffee chat"| UA
+    UA <-->|"同儕配對聊天"| UA
+    U2 -->|"查看媒合結果"| DB1
+
+    %% ── 政府端 → 後端 ──
+    G1 -->|"查看媒合統計"| DB3
+    G2 <-->|"真人對話紀錄"| DB1
+    G3 -->|"上傳與管理資源"| DB4
+
+    %% ── Agent → Firebase ──
+    UA <-->|"更新使用者背景"| DB2
+    UA -->|"廣播需求到頻道"| DB1
+    RA -->|"讀取資源條件"| DB4
+    RA -->|"寫入媒合統計資料"| DB3
+
+    %% ── 觸發鏈 ──
+    DB1 -.->|"觸發資源媒合評估"| RA
+
+    %% ── 樣式 ──
+    classDef userStyle fill:#E6F1FB,stroke:#185FA5,color:#0C447C
+    classDef govStyle fill:#EAF3DE,stroke:#3B6D11,color:#27500A
+    classDef dbStyle fill:#FAEEDA,stroke:#854F0B,color:#633806
+    classDef agentStyle fill:#E6F1FB,stroke:#185FA5,color:#0C447C
+
+    class U1,U2,U3,U4 userStyle
+    class G1,G2,G3 govStyle
+    class DB1,DB2,DB3,DB4 dbStyle
+    class UA,RA agentStyle
+```
+
 
 ---
 
