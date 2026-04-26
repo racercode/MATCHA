@@ -5,7 +5,6 @@ import { useAuth } from '@/lib/AuthContext'
 
 const NAV = [
   { label: '頻道', href: '/channel' },
-  { label: 'Thread 管理', href: '/threads' },
   { label: '資源管理', href: '/resources' },
   { label: '統計 Dashboard', href: '/dashboard' },
 ]

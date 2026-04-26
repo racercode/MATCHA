@@ -82,10 +82,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="human-threads"
         options={{
-          title: '政府聯絡',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'people' : 'people-outline'} size={28} color={color} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen
