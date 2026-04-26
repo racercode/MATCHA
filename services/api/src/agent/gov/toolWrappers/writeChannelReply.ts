@@ -14,12 +14,19 @@ export function buildChannelReplyFromAssessment(assessment: MatchAssessment): Ch
   const now = Date.now()
   const decision = assessment.decision as MatchAssessment['decision'] & { reasoning?: string }
   const reason = decision.reason ?? decision.reasoning ?? ''
+  const missingInfo = decision.missingInfo ?? []
+
+  let content = reason
+  if (missingInfo.length > 0) {
+    content += `\n\n⚠️ 請留意以下資格條件可能需要確認：\n${missingInfo.map(info => `• ${info}`).join('\n')}`
+  }
+
   const replyId = `reply-gov-${assessment.resource.rid}-${assessment.channelMessage.msgId}`
   return {
     replyId,
     messageId: assessment.channelMessage.msgId,
     govId: assessment.resource.rid,
-    content: reason,
+    content,
     matchScore: decision.score,
     createdAt: msToTimestamp(now),
   }

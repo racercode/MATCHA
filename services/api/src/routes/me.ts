@@ -11,16 +11,26 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 const router: IRouter = Router()
 router.use(verifyToken)
 
-function serializeChannelReply(reply: FirestoreChannelReply) {
+function serializeChannelReply(reply: FirestoreChannelReply, govName: string) {
   return {
     replyId: reply.replyId,
     messageId: reply.messageId,
     govId: reply.govId,
-    govName: reply.govId,
+    resourceId: reply.govId,
+    govName,
     content: reply.content,
     matchScore: reply.matchScore,
     createdAt: toMs(reply.createdAt),
   }
+}
+
+async function resolveGovNames(govIds: string[]): Promise<Map<string, string>> {
+  const govNames = new Map<string, string>()
+  await Promise.all(govIds.map(async gid => {
+    const doc = await db.collection('gov_resources').doc(gid).get()
+    govNames.set(gid, doc.exists ? (doc.data()!.name as string) : gid)
+  }))
+  return govNames
 }
 
 // GET /me/profile
@@ -159,10 +169,12 @@ router.get('/me/channel-replies', async (req, res) => {
     try {
       const { listChannelRepliesForUser } = await import('../lib/channelRepliesRepo.js')
       const replies = await listChannelRepliesForUser(uid, { since, limit: limit + 1 })
+      const sliced = replies.slice(0, limit)
+      const govNames = await resolveGovNames([...new Set(sliced.map(r => r.govId))])
       res.json({
         success: true,
         data: {
-          items: replies.slice(0, limit).map(serializeChannelReply),
+          items: sliced.map(r => serializeChannelReply(r, govNames.get(r.govId) ?? r.govId)),
           hasMore: replies.length > limit,
         },
       })
@@ -201,6 +213,7 @@ router.get('/me/channel-replies', async (req, res) => {
       replyId: r.replyId,
       messageId: r.messageId,
       govId: r.govId,
+      resourceId: r.govId,
       govName: govNames.get(r.govId) ?? r.govId,
       content: r.content,
       matchScore: r.matchScore,

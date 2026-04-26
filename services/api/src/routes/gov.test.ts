@@ -8,6 +8,7 @@ import {
   normalizeChannelMessage,
   selectResources,
   serializeGovAgentResult,
+  validateFollowUpRequest,
 } from './gov.js'
 import { fakeChannelMessages, fakeGovernmentResources } from '../agent/gov/fakeData.js'
 import type { GovAgentPipelineResult } from '../agent/gov/types.js'
@@ -184,5 +185,98 @@ describe('serializeGovAgentResult', () => {
     assert.equal(serialized.reason, '需求與資源高度匹配')
     assert.deepEqual(serialized.missingInfo, ['是否可投入兩個月實習'])
     assert.equal(serialized.assessment, assessment)
+  })
+})
+
+describe('validateFollowUpRequest', () => {
+  it('accepts a valid follow-up request', () => {
+    const result = validateFollowUpRequest({
+      resourceId: 'rid-youth-career-001',
+      replyId: 'reply-gov-rid-youth-career-001-msg-001',
+      question: '請問申請截止日期是什麼時候？',
+    })
+
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.equal(result.resourceId, 'rid-youth-career-001')
+    assert.equal(result.replyId, 'reply-gov-rid-youth-career-001-msg-001')
+    assert.equal(result.question, '請問申請截止日期是什麼時候？')
+  })
+
+  it('trims whitespace from fields', () => {
+    const result = validateFollowUpRequest({
+      resourceId: '  rid-001  ',
+      replyId: '  reply-001  ',
+      question: '  問題  ',
+    })
+
+    assert.equal(result.ok, true)
+    if (!result.ok) return
+    assert.equal(result.resourceId, 'rid-001')
+    assert.equal(result.replyId, 'reply-001')
+    assert.equal(result.question, '問題')
+  })
+
+  it('rejects missing resourceId', () => {
+    const result = validateFollowUpRequest({
+      replyId: 'reply-001',
+      question: '問題',
+    })
+
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.match(result.error, /resourceId/)
+  })
+
+  it('rejects empty resourceId', () => {
+    const result = validateFollowUpRequest({
+      resourceId: '   ',
+      replyId: 'reply-001',
+      question: '問題',
+    })
+
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.match(result.error, /resourceId/)
+  })
+
+  it('rejects missing replyId', () => {
+    const result = validateFollowUpRequest({
+      resourceId: 'rid-001',
+      question: '問題',
+    })
+
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.match(result.error, /replyId/)
+  })
+
+  it('rejects missing question', () => {
+    const result = validateFollowUpRequest({
+      resourceId: 'rid-001',
+      replyId: 'reply-001',
+    })
+
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.match(result.error, /question/)
+  })
+
+  it('rejects empty question', () => {
+    const result = validateFollowUpRequest({
+      resourceId: 'rid-001',
+      replyId: 'reply-001',
+      question: '',
+    })
+
+    assert.equal(result.ok, false)
+    if (result.ok) return
+    assert.match(result.error, /question/)
+  })
+
+  it('rejects undefined body', () => {
+    const result = validateFollowUpRequest(undefined)
+
+    assert.equal(result.ok, false)
   })
 })

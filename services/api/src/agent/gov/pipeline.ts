@@ -1,4 +1,5 @@
 import { toMs, type ChannelMessage, type GovernmentResource } from '@matcha/shared-types'
+import pLimit from 'p-limit'
 import { client } from './managedAgent.js'
 import {
   buildChannelReplyFromAssessment,
@@ -8,8 +9,8 @@ import {
 import type { GovToolRuntimeContext } from './toolWrappers/index.js'
 import { hasFirebaseAdminEnv } from '../../lib/firebaseEnv.js'
 import { recordMatchAttempt } from '../../lib/matchStatsRepo.js'
-import { channelReplies } from '../../lib/store.js'
-import type { MatchDecision, MatchAssessment, GovAgentPipelineResult } from './types.js'
+import { channelReplies, humanThreads } from '../../lib/store.js'
+import type { MatchDecision, MatchAssessment, GovAgentPipelineResult, FollowUpResult } from './types.js'
 
 export function parseMatchDecision(rawText: string): MatchDecision {
   const cleaned = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim()
@@ -120,11 +121,40 @@ async function persistChannelReply(result: GovAgentPipelineResult): Promise<void
   }
 }
 
+async function persistHumanThread(result: GovAgentPipelineResult): Promise<void> {
+  const tid = `thread-${result.reply.replyId}`
+  const userId = result.assessment.channelMessage.uid
+
+  if (hasFirebaseAdminEnv()) {
+    const { createHumanThread } = await import('../../lib/humanThreadsRepo.js')
+    await createHumanThread({
+      tid,
+      userId,
+      govId: result.reply.govId,
+      channelReplyId: result.reply.replyId,
+      matchScore: result.reply.matchScore,
+    })
+  } else {
+    const now = Date.now()
+    humanThreads.set(tid, {
+      tid,
+      type: 'gov_user',
+      userId,
+      govId: result.reply.govId,
+      channelReplyId: result.reply.replyId,
+      matchScore: result.reply.matchScore,
+      status: 'open',
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+}
+
 export async function runGovAgentForChannelUpdate(
   sessionId: string,
   channelMessage: ChannelMessage,
   context: GovToolRuntimeContext & { resource?: GovernmentResource; resourceName?: string },
-  threshold = 70,
+  threshold = 30,
 ): Promise<GovAgentPipelineResult | null> {
   const stream = await client.beta.sessions.events.stream(sessionId)
 
@@ -142,10 +172,11 @@ export async function runGovAgentForChannelUpdate(
                 'Use read_channel if you need recent channel context.',
                 'Use query_resource_document to inspect the single government resource and document text bound to this resource agent.',
                 'Evaluate only this bound resource. Do not ask for or propose another resource.',
-                'If this resource should not respond, final answer must be null.',
-                `Only return a match decision when eligible is true and score is at least ${threshold}.`,
+                '永遠回傳 MatchDecision JSON，不要回傳 null。即使完全無關也回傳 score 0 並說明原因。',
+                '採取寬鬆媒合策略：只要資源的主題與使用者需求相關，即使部分 eligibilityCriteria 可能不符合，仍應給予合理分數。',
+                '將使用者可能不符合的資格條件列入 missingInfo，並在 reason 中提醒使用者注意。',
                 'Do not write data or call write_channel_reply. The backend pipeline will create and persist ChannelReply after receiving your decision.',
-                'If a match should be proposed, final answer must be a JSON MatchDecision: {"eligible":true,"score":0-100,"reason":"...","missingInfo":[]}.',
+                'Final answer must be a JSON MatchDecision: {"eligible":true/false,"score":0-100,"reason":"推薦理由或不相關原因","missingInfo":["未符合條件1"]}.',
               ],
               agencyId: context.agencyId,
               resourceId: context.resourceId,
@@ -232,54 +263,187 @@ export async function runGovAgentForChannelUpdate(
   })
 }
 
+async function processAgentResult(
+  result: GovAgentPipelineResult | null,
+  resource: GovernmentResource,
+  threshold: number,
+  results: GovAgentPipelineResult[],
+): Promise<void> {
+  const matched = Boolean(result && (result.assessment.decision?.score ?? 0) >= threshold)
+
+  if (hasFirebaseAdminEnv()) {
+    try {
+      await recordMatchAttempt(resource.rid, matched, {
+        agencyId: resource.agencyId,
+        resourceName: resource.name,
+      })
+    } catch (err) {
+      console.error(`  [match_stats] Failed to record: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+
+  if (!result) {
+    console.log(`  -> [${resource.rid}] No match proposed`)
+  } else if (!matched) {
+    console.log(`  -> [${resource.rid}] Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
+  } else {
+    await persistChannelReply(result)
+    await persistHumanThread(result)
+    results.push(result)
+    console.log(`  -> [${resource.rid}] Channel reply and human thread persisted: ${result.reply.replyId}`)
+  }
+}
+
 export async function runGovAgentPipeline(
   resourceAgents: Array<{ sessionId: string; resource: GovernmentResource }>,
   messages: ChannelMessage[],
-  threshold = 70,
+  threshold = 30,
+  concurrency = 1,
 ): Promise<GovAgentPipelineResult[]> {
   const results: GovAgentPipelineResult[] = []
 
   for (const message of messages) {
-    console.log(`[Gov Agent] Channel update: ${message.uid} (${message.msgId})`)
+    console.log(`[Gov Agent] Channel update: ${message.uid} (${message.msgId}) [concurrency=${concurrency}]`)
 
-    for (const { sessionId, resource } of resourceAgents) {
-      console.log(`  [Resource Agent] ${resource.name} (${resource.rid})`)
-      const result = await runGovAgentForChannelUpdate(
-        sessionId,
-        message,
-        {
-          agencyId: resource.agencyId,
-          resourceId: resource.rid,
-          resource,
-          resourceName: resource.name,
-        },
-        threshold,
+    if (concurrency <= 1) {
+      // === Sequential 路徑：原本的 for loop，完全不動 ===
+      for (const { sessionId, resource } of resourceAgents) {
+        console.log(`  [Resource Agent] ${resource.name} (${resource.rid})`)
+        const result = await runGovAgentForChannelUpdate(
+          sessionId,
+          message,
+          {
+            agencyId: resource.agencyId,
+            resourceId: resource.rid,
+            resource,
+            resourceName: resource.name,
+          },
+          threshold,
+        )
+        await processAgentResult(result, resource, threshold, results)
+      }
+    } else {
+      // === Parallel 路徑：Promise.allSettled + p-limit ===
+      const limit = pLimit(concurrency)
+
+      const settled = await Promise.allSettled(
+        resourceAgents.map(({ sessionId, resource }) =>
+          limit(async () => {
+            console.log(`  [Resource Agent] ${resource.name} (${resource.rid}) [parallel]`)
+            const result = await runGovAgentForChannelUpdate(
+              sessionId,
+              message,
+              {
+                agencyId: resource.agencyId,
+                resourceId: resource.rid,
+                resource,
+                resourceName: resource.name,
+              },
+              threshold,
+            )
+            return { result, resource }
+          }),
+        ),
       )
 
-      const matched = Boolean(result && (result.assessment.decision?.score ?? 0) >= threshold)
-
-      if (hasFirebaseAdminEnv()) {
-        try {
-          await recordMatchAttempt(resource.rid, matched, {
-            agencyId: resource.agencyId,
-            resourceName: resource.name,
-          })
-        } catch (err) {
-          console.error(`  [match_stats] Failed to record: ${err instanceof Error ? err.message : err}`)
+      for (const entry of settled) {
+        if (entry.status === 'fulfilled') {
+          await processAgentResult(entry.value.result, entry.value.resource, threshold, results)
+        } else {
+          console.error(`  [Resource Agent] Failed:`, entry.reason)
         }
-      }
-
-      if (!result) {
-        console.log('  -> No match proposed')
-      } else if (!matched) {
-        console.log(`  -> Score too low: ${result.assessment.decision?.score ?? 'N/A'} (threshold: ${threshold})`)
-      } else {
-        await persistChannelReply(result)
-        results.push(result)
-        console.log(`  -> Channel reply persisted: ${result.reply.replyId}`)
       }
     }
   }
 
   return results
+}
+
+export async function runGovFollowUpQuestion(
+  sessionId: string,
+  context: GovToolRuntimeContext,
+  payload: {
+    question: string
+    replyId: string
+    resourceId: string
+    notificationContent?: string
+    personaSummary?: string
+  },
+): Promise<FollowUpResult> {
+  const stream = await client.beta.sessions.events.stream(sessionId)
+
+  await client.beta.sessions.events.send(sessionId, {
+    events: [
+      {
+        type: 'user.message',
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              task: 'followup_question',
+              resourceId: payload.resourceId,
+              replyId: payload.replyId,
+              notificationContent: payload.notificationContent,
+              personaSummary: payload.personaSummary,
+              question: payload.question,
+            }),
+          },
+        ],
+      },
+    ],
+  })
+
+  let output = ''
+
+  for await (const event of stream) {
+    if (event.type === 'agent.custom_tool_use') {
+      console.log(`  [followup tool] ${event.name} called`)
+      try {
+        const toolResult = await executeGovCustomTool(event.name, event.input, context)
+        await client.beta.sessions.events.send(sessionId, {
+          events: [
+            {
+              type: 'user.custom_tool_result',
+              custom_tool_use_id: event.id,
+              content: [{ type: 'text', text: JSON.stringify(toolResult) }],
+            },
+          ],
+        })
+      } catch (error) {
+        await client.beta.sessions.events.send(sessionId, {
+          events: [
+            {
+              type: 'user.custom_tool_result',
+              custom_tool_use_id: event.id,
+              is_error: true,
+              content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }],
+            },
+          ],
+        })
+      }
+    }
+
+    if (event.type === 'agent.message') {
+      for (const block of event.content) {
+        if ('text' in block) {
+          output += block.text
+        }
+      }
+    }
+
+    if (event.type === 'session.status_idle') {
+      const reason = (event as { stop_reason?: { type: string } }).stop_reason
+      if (reason?.type !== 'requires_action') {
+        break
+      }
+    }
+  }
+
+  console.log(`[Gov FollowUp] Answer: ${output.slice(0, 200)}`)
+
+  return {
+    answer: output.trim(),
+    resourceId: payload.resourceId,
+    replyId: payload.replyId,
+  }
 }

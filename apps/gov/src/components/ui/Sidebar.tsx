@@ -57,16 +57,6 @@ export default function Sidebar() {
 
       {user && (
         <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)' }}>
-          <p style={{
-            fontSize: 11,
-            color: 'var(--text-secondary)',
-            marginBottom: 8,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {user.uid}
-          </p>
           <button
             onClick={signOut}
             style={{

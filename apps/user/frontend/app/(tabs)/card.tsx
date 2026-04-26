@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import NotificationBell from '@/components/NotificationBell';
 import { Animated, PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { ClientEvent, ServerEvent, SwipeCard, SwipeCardAnswer } from '@matcha/shared-types';
@@ -444,6 +445,7 @@ export default function CardScreen() {
             </View>
             <ThemedText style={styles.brandSubtitle}>幫 agent 更新你的偏好</ThemedText>
           </View>
+          <NotificationBell />
         </View>
 
         <View style={styles.stage}>

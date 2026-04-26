@@ -5,14 +5,23 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') })
 
+import pLimit from 'p-limit'
 import { fakeGovernmentResources } from './fakeData.js'
 import { readChannelToolWrapper } from './toolWrappers/readChannel.js'
 import { initGovManagedAgentSession } from './managedAgent.js'
 import { runGovAgentPipeline } from './pipeline.js'
 import type { GovernmentResource } from '@matcha/shared-types'
 
+function getGovAgentConcurrency(): number {
+  const raw = process.env.GOV_AGENT_CONCURRENCY
+  if (!raw) return 1
+  const n = parseInt(raw, 10)
+  return Number.isFinite(n) && n >= 1 ? n : 1
+}
+
 async function main() {
-  console.log('=== MATCHA Gov Agent Pipeline (Phase 1) ===\n')
+  const concurrency = getGovAgentConcurrency()
+  console.log(`=== MATCHA Gov Agent Pipeline (Phase 1) [concurrency=${concurrency}] ===\n`)
 
   const { messages } = await readChannelToolWrapper()
   console.log(`[read_channel] ${messages.length} channel messages loaded`)
@@ -22,21 +31,49 @@ async function main() {
 
   console.log('[Gov Agent] Initializing Claude Managed Agent sessions...')
   const runKey = `run-${Date.now()}`
-  const resourceAgents: Array<{ sessionId: string; resource: GovernmentResource }> = []
-  for (const resource of fakeGovernmentResources) {
-    const sessionId = await initGovManagedAgentSession({
-      agencyId: resource.agencyId,
-      agencyName: resource.agencyName,
-      resourceId: resource.rid,
-      resourceName: resource.name,
-      sessionKey: runKey,
-    })
-    resourceAgents.push({ sessionId, resource })
+  let resourceAgents: Array<{ sessionId: string; resource: GovernmentResource }>
+
+  if (concurrency <= 1) {
+    resourceAgents = []
+    for (const resource of fakeGovernmentResources) {
+      const sessionId = await initGovManagedAgentSession({
+        agencyId: resource.agencyId,
+        agencyName: resource.agencyName,
+        resourceId: resource.rid,
+        resourceName: resource.name,
+        sessionKey: runKey,
+      })
+      resourceAgents.push({ sessionId, resource })
+    }
+  } else {
+    const limit = pLimit(concurrency)
+    const settled = await Promise.allSettled(
+      fakeGovernmentResources.map((resource) =>
+        limit(async () => {
+          const sessionId = await initGovManagedAgentSession({
+            agencyId: resource.agencyId,
+            agencyName: resource.agencyName,
+            resourceId: resource.rid,
+            resourceName: resource.name,
+            sessionKey: runKey,
+          })
+          return { sessionId, resource }
+        }),
+      ),
+    )
+    resourceAgents = []
+    for (const entry of settled) {
+      if (entry.status === 'fulfilled') {
+        resourceAgents.push(entry.value)
+      } else {
+        console.error(`[Gov Agent] Session init failed:`, entry.reason)
+      }
+    }
   }
   console.log()
 
   console.log('[Gov Agent] Running match pipeline...\n')
-  const results = await runGovAgentPipeline(resourceAgents, messages)
+  const results = await runGovAgentPipeline(resourceAgents, messages, 30, concurrency)
 
   console.log('\n=== Pipeline Results ===\n')
   console.log(`Total matches: ${results.length}\n`)

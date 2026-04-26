@@ -34,13 +34,32 @@ export interface GovernmentResource {
 
 export interface DashboardStats {
   totalReplies: number
-  avgMatchScore: number
-  scoreDistribution: {
-    '90-100': number
-    '70-89': number
-    '50-69': number
-    '0-49': number
-  }
+  openedConversations: number
+  openRate: number
+}
+
+export interface DashboardAgents {
+  agentCount: number
+  agents: { rid: string; name: string }[]
+}
+
+export interface DashboardUsers {
+  userCount: number
+}
+
+export interface ResourceMatchStat {
+  resourceId: string
+  resourceName: string
+  totalAttempts: number
+  totalMatches: number
+  matchRate: number
+}
+
+export interface DashboardMatchStats {
+  totalAttempts: number
+  totalMatches: number
+  matchRate: number
+  resources: ResourceMatchStat[]
 }
 
 export interface ChannelReplyForChannel {

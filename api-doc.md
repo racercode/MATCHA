@@ -21,6 +21,7 @@ Authorization: Bearer <uid>
 3. [市民 — Match Inbox（Polling）](#3-市民--match-inboxpolling)
 4. [市民 — Peer Threads（Coffee Chat）](#4-市民--peer-threadscoffee-chat)
 5. [市民 — Human Threads](#5-市民--human-threads)
+5.5. [市民 — 資源追問（Follow-Up）](#55-市民--資源追問follow-up)
 6. [政府 — Channel Replies & Dashboard](#6-政府--channel-replies--dashboard)
 7. [政府 — Human Threads](#7-政府--human-threads)
 8. [政府 — 資源管理](#8-政府--資源管理)
@@ -309,6 +310,74 @@ Gov 主動開啟後建立，市民定期 polling 發現；進入後透過 WebSoc
 ```
 
 > 發送訊息透過 WS `human_message` 事件（見 §9）。
+
+---
+
+## 5.5. 市民 — 資源追問（Follow-Up）
+
+使用者收到政府資源媒合通知後，可以針對該資源追問問題。後端會開啟專屬的 Resource Agent session（Q&A 模式），agent 可查詢該資源的文件來回答。
+
+同一個 `replyId` 的多次追問會共用同一個 agent session，實現多輪對話。
+
+---
+
+### ✅ `POST /api/resource-followup`
+
+**Auth**: `Authorization: Bearer <uid>`（citizen 即可，不需要 gov_staff）
+
+**Request body**
+```json
+{
+  "resourceId": "rid-youth-career-001",
+  "replyId": "reply-gov-rid-youth-career-001-msg-001",
+  "question": "請問申請截止日期是什麼時候？"
+}
+```
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| `resourceId` | string | 必填，被媒合到的資源 rid |
+| `replyId` | string | 必填，原始的 ChannelReply ID（用來關聯通知上下文） |
+| `question` | string | 必填，使用者的追問內容 |
+
+**Backend flow**
+
+```txt
+POST /api/resource-followup
+-> verifyToken (citizen OK)
+-> validate resourceId, replyId, question
+-> getGovernmentResource(resourceId)
+-> read channel_replies/{replyId} (通知內容)
+-> read personas/{uid} (使用者 persona)
+-> initGovFollowUpSession(sessionKey = followup-{replyId})
+-> runGovFollowUpQuestion(session, question)
+   -> agent 可呼叫 query_resource_document
+-> return answer
+```
+
+**Response `200`**
+```json
+{
+  "success": true,
+  "data": {
+    "answer": "根據文件，這個計畫的申請截止日期為 2026 年 6 月 30 日。您可以在截止日前透過線上系統提出申請。",
+    "resourceId": "rid-youth-career-001",
+    "replyId": "reply-gov-rid-youth-career-001-msg-001"
+  }
+}
+```
+
+**多輪對話**
+
+前端只需重複 POST 同一個 `replyId` + 新的 `question`，後端會自動複用同一個 agent session，agent 保有先前對話的上下文。
+
+**Errors**
+
+| 狀態碼 | 情境 |
+|------|------|
+| `400` | `resourceId`、`replyId` 或 `question` 缺少或為空字串 |
+| `404` | 找不到指定 `resourceId` 的資源 |
+| `500` | Agent session 初始化或追問處理失敗 |
 
 ---
 
@@ -1049,6 +1118,7 @@ type ServerEvent =
 | ✅ | `GET /peer-threads/:tid/messages` | `services/api/src/routes/threads.ts` | 支援 `before`、`limit` |
 | ✅ | `GET /me/human-threads` | `services/api/src/routes/me.ts` | 支援 `since`、`limit` |
 | ✅ | `GET /human-threads/:tid/messages` | `services/api/src/routes/threads.ts` | citizen / gov staff 共用 |
+| ✅ | `POST /api/resource-followup` | `services/api/src/routes/gov.ts` | 市民追問媒合資源，需 `Authorization`（citizen OK） |
 | ✅ | `POST /gov/agent/run-message` | `services/api/src/routes/gov.ts` | Firebase trigger target，免 `Authorization` |
 | ✅ | `POST /gov/agent/run` | `services/api/src/routes/gov.ts` | demo / dev 觸發 Gov Agent |
 | ✅ | `GET /gov/channel-replies` | `services/api/src/routes/gov.ts` | 支援 `since`、`minScore`、`limit` |

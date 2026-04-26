@@ -8,4 +8,5 @@ ignoredBuiltDependencies:
   - '@firebase/util'
   - esbuild
   - protobufjs
+  - sharp
   - unrs-resolver

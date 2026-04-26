@@ -1,5 +1,5 @@
 import { auth } from './firebase'
-import type { ChannelReply, GovernmentResource, DashboardStats, ChannelMessageItem } from '@/types'
+import type { ChannelReply, GovernmentResource, DashboardStats, DashboardAgents, DashboardUsers, DashboardMatchStats, ChannelMessageItem } from '@/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
 
@@ -61,4 +61,16 @@ export async function getChannelMessages(limit = 30): Promise<ChannelMessageItem
 
 export async function getDashboard(): Promise<DashboardStats> {
   return apiFetch<DashboardStats>('/gov/dashboard')
+}
+
+export async function getDashboardAgents(): Promise<DashboardAgents> {
+  return apiFetch<DashboardAgents>('/gov/dashboard/agents')
+}
+
+export async function getDashboardUsers(): Promise<DashboardUsers> {
+  return apiFetch<DashboardUsers>('/gov/dashboard/users')
+}
+
+export async function getDashboardStats(): Promise<DashboardMatchStats> {
+  return apiFetch<DashboardMatchStats>('/gov/dashboard/stats')
 }

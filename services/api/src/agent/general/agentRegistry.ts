@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -6,6 +6,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const GOVERNMENT_AGENTS_PATH = path.join(__dirname, 'governmentAgents.json')
 const USER_AGENTS_PATH = path.join(__dirname, 'userAgents.json')
+
+// Serializes all reads and writes per file path to prevent concurrent corruption
+const registryLocks = new Map<string, Promise<void>>()
+
+function withRegistryLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
+  const current = registryLocks.get(filePath) ?? Promise.resolve()
+  const next = current.then(fn)
+  registryLocks.set(filePath, next.then(() => {}, () => {}))
+  return next
+}
 
 export interface ManagedAgentSessionRecord {
   key: string
@@ -58,8 +68,10 @@ async function readRegistry<T>(filePath: string): Promise<RegistryFile<T>> {
 }
 
 async function writeRegistry<T>(filePath: string, registry: RegistryFile<T>): Promise<void> {
+  const tmp = `${filePath}.tmp`
   await mkdir(path.dirname(filePath), { recursive: true })
-  await writeFile(filePath, `${JSON.stringify(registry, null, 2)}\n`, 'utf8')
+  await writeFile(tmp, `${JSON.stringify(registry, null, 2)}\n`, 'utf8')
+  await rename(tmp, filePath)
 }
 
 export async function getGovernmentAgentRecord(
@@ -71,20 +83,22 @@ export async function getGovernmentAgentRecord(
 }
 
 export async function upsertGovernmentAgentRecord(record: GovernmentAgentRecord): Promise<GovernmentAgentRecord> {
-  const registry = await readRegistry<GovernmentAgentRecord>(GOVERNMENT_AGENTS_PATH)
-  const index = registry.agents.findIndex(
-    agent => agent.agencyId === record.agencyId && agent.resourceId === record.resourceId,
-  )
-  const nextRecord = { ...record, updatedAt: Date.now() }
+  return withRegistryLock(GOVERNMENT_AGENTS_PATH, async () => {
+    const registry = await readRegistry<GovernmentAgentRecord>(GOVERNMENT_AGENTS_PATH)
+    const index = registry.agents.findIndex(
+      agent => agent.agencyId === record.agencyId && agent.resourceId === record.resourceId,
+    )
+    const nextRecord = { ...record, updatedAt: Date.now() }
 
-  if (index >= 0) {
-    registry.agents[index] = nextRecord
-  } else {
-    registry.agents.push(nextRecord)
-  }
+    if (index >= 0) {
+      registry.agents[index] = nextRecord
+    } else {
+      registry.agents.push(nextRecord)
+    }
 
-  await writeRegistry(GOVERNMENT_AGENTS_PATH, registry)
-  return nextRecord
+    await writeRegistry(GOVERNMENT_AGENTS_PATH, registry)
+    return nextRecord
+  })
 }
 
 export async function getUserAgentRecord(uid: string): Promise<UserAgentRecord | undefined> {
@@ -93,43 +107,47 @@ export async function getUserAgentRecord(uid: string): Promise<UserAgentRecord |
 }
 
 export async function upsertUserAgentRecord(record: UserAgentRecord): Promise<UserAgentRecord> {
-  const registry = await readRegistry<UserAgentRecord>(USER_AGENTS_PATH)
-  const index = registry.agents.findIndex(agent => agent.uid === record.uid)
-  const nextRecord = { ...record, updatedAt: Date.now() }
+  return withRegistryLock(USER_AGENTS_PATH, async () => {
+    const registry = await readRegistry<UserAgentRecord>(USER_AGENTS_PATH)
+    const index = registry.agents.findIndex(agent => agent.uid === record.uid)
+    const nextRecord = { ...record, updatedAt: Date.now() }
 
-  if (index >= 0) {
-    registry.agents[index] = nextRecord
-  } else {
-    registry.agents.push(nextRecord)
-  }
+    if (index >= 0) {
+      registry.agents[index] = nextRecord
+    } else {
+      registry.agents.push(nextRecord)
+    }
 
-  await writeRegistry(USER_AGENTS_PATH, registry)
-  return nextRecord
+    await writeRegistry(USER_AGENTS_PATH, registry)
+    return nextRecord
+  })
 }
 
 export async function clearUserAgentSessions(
   registryUid: string,
   matcher: (session: ManagedAgentSessionRecord) => boolean,
 ): Promise<number> {
-  const registry = await readRegistry<UserAgentRecord>(USER_AGENTS_PATH)
-  const index = registry.agents.findIndex(agent => agent.uid === registryUid)
+  return withRegistryLock(USER_AGENTS_PATH, async () => {
+    const registry = await readRegistry<UserAgentRecord>(USER_AGENTS_PATH)
+    const index = registry.agents.findIndex(agent => agent.uid === registryUid)
 
-  if (index < 0) return 0
+    if (index < 0) return 0
 
-  const record = registry.agents[index]
-  const nextSessions = record.sessions.filter(session => !matcher(session))
-  const removedCount = record.sessions.length - nextSessions.length
+    const record = registry.agents[index]
+    const nextSessions = record.sessions.filter(session => !matcher(session))
+    const removedCount = record.sessions.length - nextSessions.length
 
-  if (removedCount === 0) return 0
+    if (removedCount === 0) return 0
 
-  registry.agents[index] = {
-    ...record,
-    sessions: nextSessions,
-    updatedAt: Date.now(),
-  }
+    registry.agents[index] = {
+      ...record,
+      sessions: nextSessions,
+      updatedAt: Date.now(),
+    }
 
-  await writeRegistry(USER_AGENTS_PATH, registry)
-  return removedCount
+    await writeRegistry(USER_AGENTS_PATH, registry)
+    return removedCount
+  })
 }
 
 export function upsertSession(
