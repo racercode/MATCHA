@@ -60,7 +60,7 @@ graph LR
 <video src="docs/videos/notify.mp4" controls width="600"></video>
 <video src="docs/videos/demo-gov-channel.mp4" controls width="600"></video>
 <video src="docs/videos/demo-gov-dashboard.mp4" controls width="600"></video>
-<video src="demo-gov-resources" controls width="600"></video>
+<video src="docs/videos/demo-gov-resources.mp4" controls width="600"></video>
 
 ---
 
