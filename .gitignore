@@ -45,3 +45,6 @@ command.ps
 # runtime-generated agent registry
 services/api/src/agent/general/governmentAgents.json
 services/api/src/agent/general/userAgents.json
+
+# data folder
+data/

@@ -1,60 +1,263 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/2026_YTP_黑客松-賽題_B：行善台北-4CAF50?style=for-the-badge" alt="YTP Badge"/>
-</p>
+# MATCHA — Match with Agent
 
-<h1 align="center">MATCHA — Match with Agent</h1>
-<p align="center"><b>讓 AI Agent 替你去社交，讓資源主動找到你</b></p>
-<p align="center">隊伍：PV=NTR</p>
+> AI Agent 代理社交，讓資源主動找到你
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white" alt="Node"/>
-  <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white" alt="TS"/>
-  <img src="https://img.shields.io/badge/Claude_API-Managed_Agents-6B4FBB?logo=anthropic&logoColor=white" alt="Claude"/>
-  <img src="https://img.shields.io/badge/Firebase-Firestore-FFCA28?logo=firebase&logoColor=black" alt="Firebase"/>
-  <img src="https://img.shields.io/badge/React_Native-Expo-000020?logo=expo&logoColor=white" alt="Expo"/>
-  <img src="https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white" alt="Next.js"/>
-</p>
+**賽題分類**：賽題 B · 行善台北
+**團隊**：PV=NTR
 
 ---
 
-## 30 秒看懂 MATCHA
+## 30 秒看懂這個專案
 
-> 小雅，中文系大三，打開台北市青年局網站看到 47 個計畫連結，每個都看不懂。她關掉瀏覽器，躺回床上繼續迷茫。
->
-> **這是無數台北青年的日常。政府有資源，青年有需求，但中間的搜尋成本太高，讓資源形同虛設。**
+<!-- TODO: 替換成實際截圖或 demo 影片 -->
+<!-- <video src="docs/videos/demo-full.mp4" controls width="600"></video> -->
+<!-- ![截圖](docs/screenshots/overview.png) -->
 
-MATCHA 的解法不是做一個「更好的搜尋引擎」，而是建立一個 **AI 代理社交網路**：
+我們做了 **AI 代理社交平台** 給 **迷惘的台北青年** 用，解決 **政府資源豐富但青年搜尋成本太高、資訊不對稱** 的問題。
 
+主要功能：
+- **Persona Chat**：跟 AI 聊天建立個人畫像，用 Swipe 卡片快速收斂偏好
+- **自動媒合**：每個政府資源各有一個 AI Agent，主動讀取青年畫像、比對資格、推送媒合通知（含分數與理由）
+- **Coffee Chat**：AI 自動配對背景相似的青年，促成同儕交流與經驗分享
+
+---
+
+## 解決什麼問題
+
+台北市青年局網站有 47 個計畫，但青年打開看兩個就放棄了——搜尋成本太高、申請資格看不懂。政府端則是擁有資源卻觸及不到人，第一線人員專業不對口、人力不足。
+
+**MATCHA 的核心洞察**：人生中最關鍵的機會來自社群推薦，不是搜尋引擎。我們用 AI Agent 複製這個過程——每個青年有「媒伴」Agent 代替你社交，每個政府資源也有 Agent 主動找人。**從「人找資源」翻轉為「資源找人」。**
+
+與既有方案的差異：不是做更好的搜尋引擎或推薦系統，而是建立一個 **分散式 Agent 社群**——每個 Agent 只精通一小塊 context，避免單一大模型的 context rot 問題，媒合更精準且可水平擴展。
+
+---
+
+## Demo 影片
+
+<!-- TODO: 錄製後替換 -->
+<!-- <video src="docs/videos/demo-persona-chat.mp4" controls width="600"></video> -->
+<!-- <video src="docs/videos/demo-matching.mp4" controls width="600"></video> -->
+<!-- <video src="docs/videos/demo-gov-dashboard.mp4" controls width="600"></video> -->
+
+**Demo 路徑（市民端）：**
+1. 打開 App → 進入 Persona Chat → 跟 AI 對話 3–5 輪建立畫像
+2. 切換到 Swipe 模式 → 左滑右滑回答偏好卡片 → Agent 精準度提升
+3. Agent 自動廣播 persona → 後台所有 Gov Agent 同時評估
+4. 打開「媒合通知」→ 看到 3 筆資源推薦（附分數 + 理由）→ 點擊追問細節
+5. 承辦人在 Dashboard 點「開啟對話」→ 市民進入即時聊天
+
+**Demo 路徑（政府端）：**
+1. 登入 Dashboard → 查看媒合統計（總回覆數、平均分數、開話率）
+2. Resources 頁面 → 上傳 PDF 文件（後端自動解析供 Agent 查閱）
+3. Channel Replies → 檢視 AI 媒合結果 → 點「開啟對話」與市民溝通
+
+---
+
+## 系統架構
+
+```mermaid
+graph TB
+    subgraph "市民端 — React Native + Expo"
+        CHAT["Persona Chat<br/>(含 Swipe 模式)"]
+        NOTIF["媒合通知<br/>(HTTP Polling)"]
+        COFFEE["Coffee Chat"]
+    end
+
+    subgraph "政府端 — Next.js 15"
+        DASH["Dashboard<br/>(統計 + 媒合列表)"]
+        THREAD["Human Thread"]
+        UPLOAD["資源管理<br/>(PDF 上傳)"]
+    end
+
+    subgraph "後端 — Express + TypeScript"
+        API["REST + WebSocket API"]
+        PA["Persona Agent"]
+        GA["Gov Agent × N"]
+        CA["Coffee Agent"]
+    end
+
+    subgraph "AI — Claude Managed Agents"
+        CLAUDE["Claude Sessions API<br/>(持久記憶 + Tool Use)"]
+    end
+
+    subgraph "儲存"
+        FS["Firestore<br/>(personas, channel_messages,<br/>channel_replies, gov_resources,<br/>human_threads, peer_threads)"]
+        REDIS["Upstash Redis<br/>(Session ID 快取)"]
+    end
+
+    CHAT -->|"WS: persona_message"| API
+    NOTIF -->|"GET /me/channel-replies"| API
+    COFFEE -->|"WS: peer_message"| API
+    DASH -->|"GET /gov/dashboard"| API
+    THREAD -->|"WS: human_message"| API
+    UPLOAD -->|"POST /gov/resources/:rid/documents"| API
+
+    API --> PA
+    API --> GA
+    API --> CA
+
+    PA --> CLAUDE
+    GA --> CLAUDE
+    CA --> CLAUDE
+
+    PA --> FS
+    GA -->|"讀資源文件 + 寫媒合回覆"| FS
+    CA -->|"讀 personas + 建配對"| FS
+
+    PA --> REDIS
+    GA --> REDIS
+    CA --> REDIS
 ```
-傳統做法：青年主動搜尋 → 讀完三十頁文件 → 判斷自己符不符合 → 放棄
-MATCHA：青年跟 AI 聊天 → AI 替你去社群找資源 → 資源主動找到你 → 承辦人開啟對話
-```
 
-**核心洞察**：人生中最關鍵的機會，不是搜尋引擎給你的，而是某個人在某個場合剛好推薦給你的——MATCHA 用 AI Agent 複製了這個過程。每個青年有一個「媒伴」Agent 代替你社交，每個政府資源也有自己的 Agent 主動尋找符合條件的人。這些 Agent 在一個共享社群中 24 小時互動、媒合，就像一個永不休息的職涯社群。
+### 媒合流程
 
-```
-┌──────────┐     廣播 persona      ┌──────────────┐     媒合回覆     ┌──────────────┐
-│  青年 App  │ ──── 聊天建立畫像 ────→│   Channel    │←── 逐一評估 ────│  Gov Agent   │
-│  (RN/Expo)│ ←── 收到媒合通知 ────│ (社群頻道)    │   (per 資源)   │  x N 個資源   │
-└──────────┘                      └──────────────┘               └──────────────┘
-     │                                   │                              │
-     │  追問資源細節                       │  配對相似青年                   │  承辦人查看
-     │  (Follow-Up Agent)                │  (Coffee Agent)              │  (Dashboard)
-     ▼                                   ▼                              ▼
-  即時 Q&A                          Peer Thread                    開啟真人對話
+```mermaid
+sequenceDiagram
+    participant U as 青年 App
+    participant PA as Persona Agent
+    participant CH as Channel (Firestore)
+    participant GA as Gov Agent × N
+    participant GOV as 政府 Dashboard
+
+    U->>PA: 聊天建立畫像
+    PA->>PA: update_persona
+    PA->>CH: publish_to_channel
+    CH-->>GA: 新訊息觸發（並行）
+    GA->>GA: query_resource_pdf + assess_fit
+    GA->>CH: write_channel_reply (score + 理由)
+    U->>CH: GET /me/channel-replies (Polling)
+    CH-->>U: 「青年創業貸款 — 92%」
+    U->>GA: POST /api/resource-followup (追問)
+    GA-->>U: 即時回答
+    GOV->>CH: GET /gov/channel-replies
+    GOV->>GOV: 點擊「開啟對話」
+    GOV->>U: Human Thread (WebSocket 即時聊天)
 ```
 
 ---
 
-## TL;DR
+## 快速啟動
 
-| 面向 | 說明 |
-|------|------|
-| **解什麼問題** | 台北市青年面對大量政策計畫存在嚴重資訊不對稱，搜尋成本極高；政府端擁有資源卻無法有效觸及目標青年 |
-| **怎麼解** | 多 Agent 代理社交——每個青年有 Persona Agent 建立畫像並廣播，每個政府資源有 Gov Agent 主動評估媒合，Coffee Agent 配對相似青年互助 |
-| **關鍵創新** | 不是「更好的搜尋」而是「代理社交」；分散式 Agent 避免 context rot；從「被動查詢」翻轉為「主動媒合」 |
-| **技術棧** | React Native (Expo) + Next.js 15 + Express + Claude Managed Agents (Sessions API) + Firestore + Redis |
-| **資料來源** | 台北市青年局公開政策文件（PDF）、data.taipei 開放資料 |
+```bash
+# 1. 安裝依賴
+pnpm install
+
+# 2. 設定環境變數（最小模式只需 PORT + NODE_ENV，使用 in-memory 假資料）
+cp services/api/.env.example services/api/.env
+
+# 3. 啟動後端 API（http://localhost:3000）
+pnpm dev:api
+
+# 4. 啟動政府 Dashboard（http://localhost:3001）
+pnpm dev:web
+
+# 5. 啟動市民 App（Expo）
+pnpm dev:mobile
+```
+
+> 完整環境設定（Firebase / Claude API / Redis）見下方「環境設置」段落。
+
+---
+
+## 功能列表
+
+| 功能 | 說明 | 對應檔案 / 路由 |
+|------|------|---------------|
+| **Persona Chat** | 與 AI 對話建立個人畫像 | `services/api/src/agent/persona/` · WS `persona_message` |
+| **Swipe 模式** | 類交友軟體的快速偏好收集 | `apps/user/frontend/app/(tabs)/card.tsx` |
+| **Persona 廣播** | Agent 自動將畫像發到 Channel | `publish_to_channel` tool · `channel_messages` collection |
+| **Gov Agent 媒合** | 每個資源 Agent 讀取文件、評估配對度 0–100 | `services/api/src/agent/gov/` · `POST /gov/agent/run-message` |
+| **媒合通知** | 市民 Polling 查看推薦結果 | `GET /me/channel-replies` · `apps/user/frontend/app/notifications.tsx` |
+| **資源追問** | 市民對媒合結果追問，Agent 查文件回答 | `POST /api/resource-followup` · `services/api/src/agent/gov/pipeline.ts` |
+| **Coffee Chat** | AI 配對相似青年、代理破冰聊天 | `services/api/src/agent/coffee/` · WS `peer_message` |
+| **Human Thread** | 承辦人開啟真人對話 | `POST /gov/channel-replies/:id/open` · WS `human_message` |
+| **政府 Dashboard** | 媒合統計、資源管理、Channel 視覺化 | `apps/gov/src/app/dashboard/` · `GET /gov/dashboard/*` |
+| **資源文件上傳** | 上傳 PDF/Markdown，後端自動解析為文字 | `POST /gov/resources/:rid/documents` |
+| **媒合統計** | 全域 / 單一資源的媒合次數與成功率 | `GET /gov/dashboard/stats` · `match_stats` collection |
+
+---
+
+## 技術棧
+
+| 層級 | 技術 | 用途 |
+|------|------|------|
+| 市民 App | React Native + Expo + NativeWind | 跨平台手機 App |
+| 政府 Dashboard | Next.js 15 + App Router | Web 管理介面 |
+| 後端 | Express (Node.js + TypeScript) | REST API + WebSocket + Agent 呼叫 |
+| AI | Claude Managed Agents (Sessions API) | 三個 Agent 的持久記憶 + Tool Use |
+| 認證 | Firebase Auth | 雙端共用登入 |
+| 資料庫 | Firestore | 所有業務資料（personas、replies、threads、resources） |
+| 快取 | Upstash Redis | Agent session ID 映射（TTL 24h） |
+| 文件解析 | PDF / HTML / XLSX / Markdown parser | 政府上傳文件轉文字供 Agent 查閱 |
+| Monorepo | pnpm workspaces + shared-types | 三端共用 TypeScript 型別 |
+
+---
+
+## 資料來源
+
+| 來源 | 內容 | 整合方式 |
+|------|------|---------|
+| 台北市政府青年局官網 | 青創貸款、共享空間補助、實習津貼、留學貸款等政策文件（PDF） | 政府端上傳 → 後端解析文字 → 存入 Firestore → Gov Agent `query_resource_pdf` 查閱 |
+| data.taipei | 青年局相關政策、計畫、統計資料 | 結構化為 `gov_resources` metadata |
+
+目前已入庫的資源：
+- 臺北市青年創業融資貸款（實施要點 + 不予核貸條件）
+- 青年創業共享空間租賃補助（作業要點 + QA）
+- 青年實習津貼計畫（計畫書 + QA）
+- 青年留學貸款
+
+---
+
+## 環境設置
+
+### 前置需求
+
+- **Node.js** >= 20 · **pnpm** >= 8
+- **Anthropic API Key**（Claude API，Agent 功能必需）
+- **Firebase 專案**（Firestore + Auth；僅跑 in-memory 模式可跳過）
+- **Upstash Redis**（Agent session 快取；僅跑 in-memory 模式可跳過）
+
+### 環境變數
+
+```bash
+cp services/api/.env.example services/api/.env
+```
+
+```env
+# Claude API
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Claude Managed Agents（首次執行 setup 腳本產生）
+MANAGED_ENV_ID=
+PERSONA_AGENT_ID=
+COFFEE_AGENT_ID=
+
+# Firebase Admin SDK
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+
+# Upstash Redis
+UPSTASH_REDIS_URL=rediss://default:<token>@<host>:6380
+
+# Server
+PORT=3000
+NODE_ENV=development
+```
+
+### 初始化 Managed Agents（首次）
+
+```bash
+cd services/api && npx tsx src/agents/user/setup.ts --init
+# 把輸出的 ID 貼回 .env
+```
+
+### 上傳政府資源
+
+```bash
+node data/upload.js --all          # 上傳全部
+node data/upload.js --dry-run --all # 預覽不上傳
+```
 
 ---
 
@@ -63,270 +266,33 @@ MATCHA：青年跟 AI 聊天 → AI 替你去社群找資源 → 資源主動找
 ```
 matcha/
 ├── apps/
-│   ├── user/frontend/     ← 市民 App（React Native + Expo）
-│   └── gov/               ← 政府 Dashboard（Next.js 15）
+│   ├── user/frontend/        ← 市民 App（React Native + Expo）
+│   └── gov/                  ← 政府 Dashboard（Next.js 15）
 ├── services/
-│   └── api/               ← 後端 API + AI Agents（Express + TypeScript）
+│   └── api/                  ← 後端 API + AI Agents（Express）
 │       └── src/
-│           ├── agent/     ← Persona / Gov / Coffee Agent 實作
-│           ├── lib/       ← Firebase / Redis / Anthropic client
-│           ├── routes/    ← REST API endpoints
-│           ├── ws/        ← WebSocket handler
-│           └── mock/      ← Mock server（前端開發用）
+│           ├── agent/        ← persona / gov / coffee Agent 實作
+│           ├── lib/          ← Firebase / Redis / Anthropic / Repos
+│           ├── routes/       ← REST endpoints
+│           └── ws/           ← WebSocket handler
 ├── packages/
-│   └── shared-types/      ← 三端共用 TypeScript 型別
-├── data/                  ← 政府資源原始資料（PDF + metadata）
+│   └── shared-types/         ← 三端共用 TypeScript 型別
+├── data/                     ← 政府資源原始資料（PDF + metadata）
+├── docs/                     ← 簡報 PDF、Demo 影片、架構圖
 └── pnpm-workspace.yaml
 ```
 
 ---
 
-## 環境設置
-
-### 前置需求
-
-- **Node.js** >= 20
-- **pnpm** >= 8（`npm install -g pnpm`）
-- **Anthropic API Key**（Claude API，Agent 功能必需）
-- **Firebase 專案**（Firestore + Auth，全功能必需；僅跑 in-memory 模式可跳過）
-- **Upstash Redis**（Agent session 快取，全功能必需）
-
-### 1. 安裝依賴
-
-```bash
-pnpm install
-```
-
-### 2. 設定環境變數
-
-```bash
-cp services/api/.env.example services/api/.env
-```
-
-編輯 `services/api/.env`：
-
-```env
-# ── 必填（AI Agent 功能）────────────────────────
-ANTHROPIC_API_KEY=sk-ant-...
-
-# ── Claude Managed Agents（首次執行 setup 腳本產生）──
-MANAGED_ENV_ID=
-PERSONA_AGENT_ID=
-COFFEE_AGENT_ID=
-
-# ── Firebase Admin SDK ─────────────────────────
-FIREBASE_PROJECT_ID=your-project-id
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-FIREBASE_REALTIME_DB_URL=https://your-project.firebaseio.com
-
-# ── Upstash Redis ──────────────────────────────
-UPSTASH_REDIS_URL=rediss://default:<token>@<host>:6380
-
-# ── Server ─────────────────────────────────────
-PORT=3000
-NODE_ENV=development
-```
-
-> **最小開發模式**（不需要 Firebase / Claude）：只填 `PORT=3000` 和 `NODE_ENV=development`，後端會使用 in-memory seed data。
-
-### 3. 初始化 Managed Agents（首次）
-
-```bash
-cd services/api
-npx tsx src/agents/user/setup.ts --init
-```
-
-把輸出的 `MANAGED_ENV_ID`、`PERSONA_AGENT_ID`、`COFFEE_AGENT_ID` 貼回 `.env`。
-
-### 4. 上傳政府資源資料
-
-```bash
-# 上傳 data/ 目錄下所有資源到 Firestore
-node data/upload.js --all
-
-# 或指定單一資源
-node data/upload.js 青年創業共享空間租賃補助作業要點
-```
-
-### 5. 啟動服務
-
-```bash
-# 後端 API（http://localhost:3000）
-pnpm dev:api
-
-# 政府 Dashboard（http://localhost:3001）
-pnpm dev:web
-
-# 市民 App（Expo）
-pnpm dev:mobile
-```
-
-啟動後可驗證：
-- Health check: `GET http://localhost:3000/health`
-- WebSocket: `ws://localhost:3000/ws?token=uid-abc`
-
----
-
-## 資料集
-
-MATCHA 使用台北市青年局的公開政策文件作為政府資源 Agent 的知識來源：
-
-```
-data/
-├── 青年創業共享空間租賃補助作業要點/
-│   ├── metadata.json                  ← 資源 ID、名稱、資格條件
-│   ├── 臺北市政府青年局...作業要點.pdf    ← 完整辦法
-│   └── ...QA.pdf                      ← FAQ 文件
-├── 青創貸款及補助/
-│   ├── metadata.json
-│   ├── 臺北市青年創業融資貸款實施要點.pdf
-│   └── 臺北市青年創業融資貸款不予核貸條件.pdf
-├── 青年實習津貼計畫/
-│   ├── metadata.json
-│   ├── 臺北市政府青年局青年實習津貼計畫.pdf
-│   └── QA.pdf
-└── 青年留學貸款/
-    ├── metadata.json
-    └── 青年留學貸款 - 臺北市政府青年局.pdf
-```
-
-**資料來源：** 台北市政府青年局官網（[youth.gov.taipei](https://youth.gov.taipei)）、台北市資料大平台（data.taipei）
-
-**上傳流程：** 腳本讀取 `metadata.json` 建立 Firestore `gov_resources/{rid}`，並解析 PDF/Markdown 文字存入 `gov_resources/{rid}/documents/{docId}`，供 Gov Agent 的 `query_resource_pdf` 工具查閱。
-
----
-
-## 使用說明
-
-### 市民端（React Native App）
-
-1. 登入後進入 **Persona Chat**，跟「媒伴」Agent 聊天建立個人畫像
-2. 可切換到 **職涯羅盤**（Swipe 模式），像交友軟體一樣快速回答偏好問題，提升推薦精準度
-3. Agent 準備好後會自動將 persona 廣播到 Channel，觸發資源媒合
-4. 在 **媒合通知** 頁面查看 Gov Agent 的配對結果（符合度 + 理由），可追問資源細節
-5. 在 **Coffee Chat** 查看被配對的相似青年，閱讀去識別化的交流摘要
-6. 政府承辦人開啟真人對話後，在 **Human Thread** 頁面即時聊天
-
-### 政府端（Next.js Dashboard）
-
-1. 在 **Resources** 管理政府資源，上傳 PDF/Markdown 文件（後端自動解析文字）
-2. 在 **Dashboard** 查看媒合統計——總回覆數、平均分數、開話率、分數分佈、資源熱度
-3. 在 **Channel Replies** 檢視 AI 媒合結果，可依分數篩選
-4. 點擊 **「開啟對話」** 建立 Human Thread，與市民一對一即時溝通
-
-### 常用指令
-
-```bash
-# ── 開發 ────────────────────────────────
-pnpm dev:api                          # 後端 API（port 3000）
-pnpm dev:web                          # 政府 Dashboard
-pnpm dev:mobile                       # 市民 App（Expo）
-pnpm --filter api dev:mock            # Mock server（port 3001）
-
-# ── 建置 ────────────────────────────────
-pnpm build:types                      # 編譯 shared-types
-pnpm --filter api build               # 編譯後端
-
-# ── 測試與工具 ──────────────────────────
-pnpm --filter api gov:test            # Gov Agent pipeline 測試
-pnpm --filter api gov:upload-resources # 批次上傳 data/ 到 Firestore
-```
-
-### API 文件
-
-完整 REST API 與 WebSocket 事件合約見 [`api-doc.md`](./api-doc.md)。
-
----
-
-## 開發藍圖
-
-| 階段 | 任務 | 狀態 |
-|------|------|------|
-| **Phase 1** | Monorepo 建立、shared-types 定義、Mock Server、基礎 UI 框架 | Done |
-| **Phase 2** | Persona Agent（對話 + Swipe + 廣播）、Express REST API、WebSocket | Done |
-| **Phase 3** | Gov Agent Pipeline（RAG + 媒合評分 + channel_replies）、資源文件上傳與解析 | Done |
-| **Phase 4** | Coffee Agent（Peer 配對 + 代理聊天）、Human Thread（政府開啟真人對話） | Done |
-| **Phase 5** | 政府 Dashboard 統計、資源追問 Follow-Up API、並行 Agent 觸發、媒合統計 | Done |
-| **Future** | Firebase Auth 正式整合、FCM Push 通知、個人檔案雷達圖、政策數據反饋儀表板 | Planned |
-
----
-
-## 評分維度自評
-
-### 1. 技術實作 / 功能完整度
-
-**AI 應用深度**
-- 使用 Claude **Managed Agents（Sessions API）** 實作三個獨立 Agent，非單純 prompt → response 的 wrapper
-- 每個 Agent 有持久記憶（Session + Redis TTL 24h）、自有工具集（Firestore CRUD）、獨立 system prompt
-- Gov Agent 支援 RAG：讀取政府上傳的 PDF 文件文字，對照市民 persona 進行結構化媒合評估（0–100 分 + 理由 + 缺漏資訊）
-- 分散式 Agent 架構避免 context rot——每個 Agent 只處理小範圍的 context（一個資源或一個使用者），不靠單一大模型搜全部
-- Follow-Up Agent 支援多輪追問，session 複用讓市民可以對同一資源連續提問
-
-**系統穩定性**
-- 冪等觸發機制（`gov_agent_runs/{messageId}`）防止重複處理同一 channel message
-- 可控的並行度（`GOV_AGENT_CONCURRENCY` 環境變數）
-- In-memory fallback 模式：不接 Firebase/Claude 也能跑完整 API，供前端獨立開發
-
-**GitHub 開發規範**
-- pnpm monorepo + shared-types contract-first 開發
-- 三組平行開發（mobile / web / api），透過 mock server 解耦
-
-### 2. 創新性
-
-**核心創新：代理社交**
-- 不是「更好的搜尋引擎」——是根本性地翻轉了資源流動方向：從「人找資源」變成「資源找人」
-- 靈感來自 LinkedIn 的核心觀察：人生中最關鍵的機會來自社群推薦而非主動搜尋。MATCHA 用 AI Agent 低成本地複製了這個社交過程
-
-**分散式 Agent 作為架構創新**
-- 傳統 LLM 搜索在資料量大時 context rot 導致精度下降；MATCHA 的每個 Agent 只精通一小塊 context，媒合發生在 Agent 間互動
-- 新增資源只需新增一個 Agent，系統水平擴展，不需重新訓練或調整
-
-**Coffee Chat：同儕連結**
-- 不只是「人 ↔ 資源」媒合，還做「人 ↔ 人」媒合——讓迷惘的青年看到跟自己背景相似的人怎麼走過來的，提供傳統政府系統無法給予的同儕支持
-
-### 3. 體驗與可用性
-
-**UI 友善**
-- 市民端以「聊天」為核心互動，零學習成本——不需要填表、不需要搜尋、不需要讀文件
-- 職涯羅盤（Swipe 模式）模仿交友軟體的互動設計，幾秒鐘就能回答五個問題，讓 Agent 更了解使用者
-- 媒合結果以卡片 + 百分比 + 一句話理由呈現，直覺好懂
-
-**數據視覺化**
-- 政府 Dashboard 提供：媒合統計（總回覆數、平均 matchScore、開話率）、分數分佈、Resource Agent 數量、市民數量、單一資源媒合統計
-
-**弱勢包容性**
-- 設計初衷就是為「不知道自己要什麼」的迷惘青年服務——這群人在傳統搜尋模式下完全被遺漏
-- 對話式互動降低了資訊素養門檻：不需要知道「正確的關鍵字」就能被找到
-
-### 4. 主題契合度
-
-**行善台北**
-- 直接針對台北市青年局的真實政策計畫（青創貸款、共享空間補助、實習津貼、留學貸款）做媒合
-- 解決的核心問題就是賽題的核心：政府有豐富資源、青年有迫切需求，但中間的資訊不對稱讓這些資源形同虛設
-
-**政府開放資料整合**
-- 資料來源：台北市青年局官網公開文件、data.taipei 開放資料
-- 政府端可自行上傳 PDF/Markdown，後端自動解析為文字供 Agent 查閱——不依賴靜態爬蟲，支援動態更新
-
-### 5. 落地 / 商業化潛力
-
-**實用性**
-- 完整的端到端流程已實作：從市民建立 persona → 資源自動媒合 → 追問細節 → 承辦人開啟真人對話
-- 資源管理介面讓政府端無需技術背景即可新增/更新資源
-
-**商業可行性**
-- **算力套利人力**：以低廉的雲端推論成本，大幅減輕第一線人員負擔，替代高昂的真人諮詢工時
-- **活化政策預算**：自動化媒合精準提升觸及率，解決資源閒置的痛點，極大化政府預算實質影響力
-- 主要推論負擔集中在政府端 Agent，政府可控制資源分配
-
-**擴展性**
-- 多 Agent 插件式架構：新增一個政府資源只需新增一個 Agent + 上傳文件，不需修改系統
-- 可從台北市擴展到全台，甚至應用於其他政策領域（社福、衛生、教育）
-- 未來可接入民間企業（實習機會、培訓課程），生態自然成長
-
-**社會影響力**
-- 當一個青年因為搜尋成本太高而放棄，不僅是個人損失，更是整個社會的損失。MATCHA 將搜尋成本降至接近零，讓每個人都有機會被看見，讓每個資源都能找到它該去的地方
+## 團隊與分工
+
+| 組別 | 負責範圍 | 技術 |
+|------|---------|------|
+| **Group A** | 市民 App（Persona Chat、Swipe、通知、Coffee Chat、Human Thread） | React Native + Expo |
+| **Group B** | 政府 Dashboard（資源管理、媒合列表、統計視覺化、Human Thread） | Next.js 15 |
+| **Group C** | 後端 API + 三個 AI Agent + Firebase 整合 + WebSocket | Express + Claude API |
+
+協作機制：**Contract-First**——`shared-types` 先定義型別 → Mock Server 讓前端第一天就能開發 → 逐步切換到真實 Agent 端點。
 
 ---
 
@@ -334,12 +300,8 @@ pnpm --filter api gov:upload-resources # 批次上傳 data/ 到 Firestore
 
 | 文件 | 說明 |
 |------|------|
-| [`intro.md`](./intro.md) | 完整專案介紹（動機 → 情境 → 架構 → 技術細節） |
-| [`api-doc.md`](./api-doc.md) | REST API + WebSocket 完整合約 |
-| [`plan.md`](./plan.md) | 開發計畫與 Agent 實作細節 |
-| [`data/README.md`](./data/README.md) | 政府資源資料格式與上傳說明 |
-
----
-
-<p align="center"><b>政府擁有豐富的資源，青年擁有迫切的需求，但中間缺少的從來不是「搜尋引擎」，而是「社群」。</b></p>
-<p align="center">MATCHA 讓 AI Agent 建立一個 24 小時運作的職涯社群，代替青年去社交、代替政府去尋找。<br/>在這個社群中，每個人都能被看見，每個資源都能找到它該去的地方。</p>
+| [intro.md](./intro.md) | 完整專案介紹（動機、洞察、情境、架構、技術細節、評分維度分析） |
+| [api-doc.md](./api-doc.md) | REST API + WebSocket 完整合約 |
+| [plan.md](./plan.md) | 開發計畫與 Agent 實作規格 |
+| [data/README.md](./data/README.md) | 政府資源資料格式與上傳說明 |
+<!-- | [docs/slides.pdf](./docs/slides.pdf) | 決選簡報投影片 | -->
