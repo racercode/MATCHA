@@ -54,10 +54,10 @@ graph LR
 
 ---
 
-<video src="docs/videos/chat.mp4" controls width="600"></video>
-<video src="docs/videos/chat2.mp4" controls width="600"></video>
-<video src="docs/videos/card.mp4" controls width="600"></video>
-<video src="docs/videos/notify.mp4" controls width="600"></video>
+<video src="docs/videos/chat.mov" controls width="600"></video>
+<video src="docs/videos/chat2.mov" controls width="600"></video>
+<video src="docs/videos/card.mov" controls width="600"></video>
+<video src="docs/videos/notify.mov" controls width="600"></video>
 <video src="docs/videos/demo-gov-channel.mp4" controls width="600"></video>
 <video src="docs/videos/demo-gov-dashboard.mp4" controls width="600"></video>
 <video src="docs/videos/demo-gov-resources.mp4" controls width="600"></video>
