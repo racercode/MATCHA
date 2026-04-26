@@ -21,7 +21,7 @@
 
 <!-- TODO: 替換成實際截圖或 demo 影片 -->
 <!-- <video src="docs/videos/demo-full.mp4" controls width="600"></video> -->
-![截圖](exported-image.png)
+![截圖](asset/overview_screenshot.png)
 
 MATCHA — Match with Agent (賽題B)
 人生中最關鍵的機會資源大多來自人脈、社交網路
@@ -55,6 +55,19 @@ MATCHA 的解法不是做一個「更好的搜尋引擎」，而是建立一個 
 | **關鍵創新** | 不是「更好的搜尋」而是「代理社交」；分散式 Agent 避免 context rot；從「被動查詢」翻轉為「主動媒合」 |
 | **技術棧** | React Native (Expo) + Next.js 15 + Express + Claude Managed Agents (Sessions API) + Firestore + Redis |
 | **資料來源** | 台北市青年局公開政策文件（PDF）、data.taipei 開放資料 |
+
+---
+
+## Illustration Video
+
+### User Side
+
+<video src="asset/user_video.mp4"></video>
+
+### Government Side
+
+<video src="asset/gov_video.mp4"></video>
+<!-- <video src="asset/gov_video.mp4" controls width="600"></video> -->
 
 ---
 
@@ -203,6 +216,8 @@ MATCHA 使用台北市青年局的公開政策文件作為政府資源 Agent 的
 
 ```
 data/
+├── upload.js                          ← 上傳腳本
+├── link_to_crawl.md                   ← 資料來源連結
 ├── 青年創業共享空間租賃補助作業要點/
 │   ├── metadata.json                  ← 資源 ID、名稱、資格條件
 │   ├── 臺北市政府青年局...作業要點.pdf    ← 完整辦法
@@ -215,9 +230,29 @@ data/
 │   ├── metadata.json
 │   ├── 臺北市政府青年局青年實習津貼計畫.pdf
 │   └── QA.pdf
-└── 青年留學貸款/
+├── 青年留學貸款/
+│   ├── metadata.json
+│   └── 青年留學貸款 - 臺北市政府青年局.pdf
+├── 職涯培力及創業活動補助作業要點/
+│   ├── metadata.json
+│   ├── 臺北市政府青年局職涯培力及創業活動補助作業要點.pdf
+│   ├── 臺北市政府青年局職涯培力及創業活動補助作業要點Q&A.pdf
+│   └── 經費編列基準表1150101版.pdf
+├── 軟體工程師/                         ← 職缺資料（實習/就業）
+│   ├── metadata.json
+│   ├── 哲煜科技...台北實習軟體工程師.txt
+│   ├── 未來巢科技...AI 軟體工程師.txt
+│   └── 精拓生技...軟體工程師實習生.txt
+├── 行銷企劃/
+│   ├── metadata.json
+│   ├── 【cacaFly】數位廣告優化師媒體專員.txt
+│   ├── IKEA 宜家家居...銷售人員.txt
+│   └── 電商行銷實習生...【明基BenQ】.txt
+└── 餐飲服務生/
     ├── metadata.json
-    └── 青年留學貸款 - 臺北市政府青年局.pdf
+    ├── 【日商藏壽司】儲備餐飲菁英培訓計畫.txt
+    ├── 【雞湯桑 大巨蛋店】內外場正職夥伴.txt
+    └── 內外場儲備幹部【杏子豬排-北車微風店】.txt
 ```
 
 **資料來源：** 台北市政府青年局官網（[youth.gov.taipei](https://youth.gov.taipei)）、台北市資料大平台（data.taipei）
