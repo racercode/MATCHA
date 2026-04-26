@@ -62,12 +62,11 @@ MATCHA 的解法不是做一個「更好的搜尋引擎」，而是建立一個 
 
 ### User Side
 
-<video src="asset/user_video.mp4"></video>
+[![User Side Demo](asset/user_video.gif)](asset/user_video.mp4)
 
 ### Government Side
 
-<video src="asset/gov_video.mp4"></video>
-<!-- <video src="asset/gov_video.mp4" controls width="600"></video> -->
+[![Government Side Demo](asset/gov_video.gif)](asset/gov_video.mp4)
 
 ---
 
