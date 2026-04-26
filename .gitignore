@@ -48,3 +48,6 @@ services/api/src/agent/general/userAgents.json
 
 # data folder
 data/
+
+# hackathon guide PDFs
+YTP2026*.pdf
