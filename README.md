@@ -15,10 +15,6 @@
   <img src="https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white" alt="Next.js"/>
 </p>
 
-<video src="docs/videos/demo-gov-channel.mp4" controls width="600"></video>
-<video src="docs/videos/demo-gov-resources.mp4" controls width="600"></video>
-<video src="docs/videos/demo-gov-dashboard.mp4" controls width="600"></video>
-
 ---
 
 ## 30 秒看懂這個專案
@@ -54,16 +50,6 @@ graph LR
 
 ---
 
-<video src="docs/videos/chat.mp4" controls width="600"></video>
-<video src="docs/videos/chat2.mp4" controls width="600"></video>
-<video src="docs/videos/card.mp4" controls width="600"></video>
-<video src="docs/videos/notify.mp4" controls width="600"></video>
-<video src="docs/videos/demo-gov-channel.mp4" controls width="600"></video>
-<video src="docs/videos/demo-gov-dashboard.mp4" controls width="600"></video>
-<video src="docs/videos/demo-gov-resources.mp4" controls width="600"></video>
-
----
-
 ## TL;DR
 
 | 面向 | 說明 |
@@ -75,7 +61,7 @@ graph LR
 | **資料來源** | 台北市青年局公開政策文件（PDF）、data.taipei 開放資料 |
 
 ---
-<!-- 
+
 ## Illustration Video
 
 ### User Side
@@ -86,7 +72,7 @@ graph LR
 
 [![Government Side Demo](asset/gov_video.gif)](asset/gov_video.mp4)
 
---- -->
+---
 
 ## 使用說明
 
