@@ -289,57 +289,6 @@ pnpm dev:mobile
 
 ---
 
-
-## 資料集
-
-
-MATCHA 使用台北市青年局的公開政策文件作為政府資源 Agent 的知識來源：
-
-```
-data/
-├── upload.js                          ← 上傳腳本
-├── link_to_crawl.md                   ← 資料來源連結
-├── 青年創業共享空間租賃補助作業要點/
-│   ├── metadata.json                  ← 資源 ID、名稱、資格條件
-│   ├── 臺北市政府青年局...作業要點.pdf    ← 完整辦法
-│   └── ...QA.pdf                      ← FAQ 文件
-├── 青創貸款及補助/
-│   ├── metadata.json
-│   ├── 臺北市青年創業融資貸款實施要點.pdf
-│   └── 臺北市青年創業融資貸款不予核貸條件.pdf
-├── 青年實習津貼計畫/
-│   ├── metadata.json
-│   ├── 臺北市政府青年局青年實習津貼計畫.pdf
-│   └── QA.pdf
-├── 青年留學貸款/
-│   ├── metadata.json
-│   └── 青年留學貸款 - 臺北市政府青年局.pdf
-├── 職涯培力及創業活動補助作業要點/
-│   ├── metadata.json
-│   ├── 臺北市政府青年局職涯培力及創業活動補助作業要點.pdf
-│   ├── 臺北市政府青年局職涯培力及創業活動補助作業要點Q&A.pdf
-│   └── 經費編列基準表1150101版.pdf
-├── 軟體工程師/                         ← 職缺資料（實習/就業）
-│   ├── metadata.json
-│   ├── 哲煜科技...台北實習軟體工程師.txt
-│   ├── 未來巢科技...AI 軟體工程師.txt
-│   └── 精拓生技...軟體工程師實習生.txt
-├── 行銷企劃/
-│   ├── metadata.json
-│   ├── 【cacaFly】數位廣告優化師媒體專員.txt
-│   ├── IKEA 宜家家居...銷售人員.txt
-│   └── 電商行銷實習生...【明基BenQ】.txt
-└── 餐飲服務生/
-    ├── metadata.json
-    ├── 【日商藏壽司】儲備餐飲菁英培訓計畫.txt
-    ├── 【雞湯桑 大巨蛋店】內外場正職夥伴.txt
-    └── 內外場儲備幹部【杏子豬排-北車微風店】.txt
-```
-
-**資料來源：** 台北市政府青年局官網（[youth.gov.taipei](https://youth.gov.taipei)）、台北市資料大平台（data.taipei）
-
-**上傳流程：** 腳本讀取 `metadata.json` 建立 Firestore `gov_resources/{rid}`，並解析 PDF/Markdown 文字存入 `gov_resources/{rid}/documents/{docId}`，供 Gov Agent 的 `query_resource_pdf` 工具查閱。
-
 ### 常用指令
 
 ```bash
